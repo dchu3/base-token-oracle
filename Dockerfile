@@ -8,7 +8,7 @@
 #   <parent>/
 #     base-token-oracle/      <-- this repo
 #     dex-screener-mcp/
-#     base-mcp-honeypot/
+#     dex-honeypot-mcp/
 #     dex-blockscout-mcp/
 #
 # Invoke with:
@@ -27,11 +27,11 @@ RUN cd dex-screener-mcp && npm ci
 COPY dex-screener-mcp/ ./dex-screener-mcp/
 RUN cd dex-screener-mcp && npm run build
 
-# base-mcp-honeypot (emits dist/server.js via tsconfig.build.json)
-COPY base-mcp-honeypot/package.json base-mcp-honeypot/package-lock.json* ./base-mcp-honeypot/
-RUN cd base-mcp-honeypot && npm ci
-COPY base-mcp-honeypot/ ./base-mcp-honeypot/
-RUN cd base-mcp-honeypot && npm run build
+# dex-honeypot-mcp (emits dist/index.js)
+COPY dex-honeypot-mcp/package.json dex-honeypot-mcp/package-lock.json* ./dex-honeypot-mcp/
+RUN cd dex-honeypot-mcp && npm ci
+COPY dex-honeypot-mcp/ ./dex-honeypot-mcp/
+RUN cd dex-honeypot-mcp && npm run build
 
 # dex-blockscout-mcp
 COPY dex-blockscout-mcp/package.json dex-blockscout-mcp/package-lock.json* ./dex-blockscout-mcp/
@@ -63,8 +63,8 @@ RUN cd oracle && npm ci --omit=dev
 COPY dex-screener-mcp/package.json dex-screener-mcp/package-lock.json* ./dex-screener-mcp/
 RUN cd dex-screener-mcp && npm ci --omit=dev
 
-COPY base-mcp-honeypot/package.json base-mcp-honeypot/package-lock.json* ./base-mcp-honeypot/
-RUN cd base-mcp-honeypot && npm ci --omit=dev
+COPY dex-honeypot-mcp/package.json dex-honeypot-mcp/package-lock.json* ./dex-honeypot-mcp/
+RUN cd dex-honeypot-mcp && npm ci --omit=dev
 
 COPY dex-blockscout-mcp/package.json dex-blockscout-mcp/package-lock.json* ./dex-blockscout-mcp/
 RUN cd dex-blockscout-mcp && npm ci --omit=dev
@@ -93,11 +93,11 @@ COPY --from=mcps-builder --chown=oracle:oracle /build/dex-screener-mcp/package-l
 COPY --from=prod-deps    --chown=oracle:oracle /deps/dex-screener-mcp/node_modules       /app/mcps/dex-screener-mcp/node_modules
 COPY --from=mcps-builder --chown=oracle:oracle /build/dex-screener-mcp/dist              /app/mcps/dex-screener-mcp/dist
 
-# MCP: base-mcp-honeypot  (entry is dist/server.js)
-COPY --from=mcps-builder --chown=oracle:oracle /build/base-mcp-honeypot/package.json      /app/mcps/base-mcp-honeypot/package.json
-COPY --from=mcps-builder --chown=oracle:oracle /build/base-mcp-honeypot/package-lock.json /app/mcps/base-mcp-honeypot/package-lock.json
-COPY --from=prod-deps    --chown=oracle:oracle /deps/base-mcp-honeypot/node_modules       /app/mcps/base-mcp-honeypot/node_modules
-COPY --from=mcps-builder --chown=oracle:oracle /build/base-mcp-honeypot/dist              /app/mcps/base-mcp-honeypot/dist
+# MCP: dex-honeypot-mcp  (entry is dist/index.js)
+COPY --from=mcps-builder --chown=oracle:oracle /build/dex-honeypot-mcp/package.json      /app/mcps/dex-honeypot-mcp/package.json
+COPY --from=mcps-builder --chown=oracle:oracle /build/dex-honeypot-mcp/package-lock.json /app/mcps/dex-honeypot-mcp/package-lock.json
+COPY --from=prod-deps    --chown=oracle:oracle /deps/dex-honeypot-mcp/node_modules       /app/mcps/dex-honeypot-mcp/node_modules
+COPY --from=mcps-builder --chown=oracle:oracle /build/dex-honeypot-mcp/dist              /app/mcps/dex-honeypot-mcp/dist
 
 # MCP: dex-blockscout-mcp
 COPY --from=mcps-builder --chown=oracle:oracle /build/dex-blockscout-mcp/package.json      /app/mcps/dex-blockscout-mcp/package.json
@@ -111,7 +111,7 @@ WORKDIR /app/oracle
 ENV NODE_ENV=production \
     PORT=8080 \
     MCP_DEXSCREENER_CMD="node /app/mcps/dex-screener-mcp/dist/index.js" \
-    MCP_HONEYPOT_CMD="node /app/mcps/base-mcp-honeypot/dist/server.js" \
+    MCP_HONEYPOT_CMD="node /app/mcps/dex-honeypot-mcp/dist/index.js" \
     MCP_BLOCKSCOUT_CMD="node /app/mcps/dex-blockscout-mcp/dist/index.js"
 
 EXPOSE 8080

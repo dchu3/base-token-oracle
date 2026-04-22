@@ -49,28 +49,16 @@ const HoneypotCheckSchema = z
 
 export type HoneypotCheck = z.infer<typeof HoneypotCheckSchema>;
 
-const DiscoverPairsSchema = z
-  .object({
-    pairs: z
-      .array(
-        z
-          .object({
-            address: z.string().optional(),
-            chainId: z.union([z.string(), z.number()]).optional(),
-            reserves: z.unknown().optional(),
-            liquidity: z.unknown().optional(),
-          })
-          .passthrough(),
-      )
-      .optional(),
-  })
-  .passthrough();
-
-export type HoneypotDiscoverPairs = z.infer<typeof DiscoverPairsSchema>;
+/**
+ * Chains understood by `dex-honeypot-mcp`'s `check_honeypot` tool.
+ * See https://github.com/dchu3/dex-honeypot-mcp
+ */
+export type HoneypotChain = 'ethereum' | 'bsc' | 'base';
 
 export interface HoneypotInput {
   address: string;
-  chainId?: number | string;
+  /** Optional; omit to let the server auto-detect. */
+  chain?: HoneypotChain;
 }
 
 export interface HoneypotServiceOptions {
@@ -97,14 +85,8 @@ export class HoneypotService {
 
   async checkToken(input: HoneypotInput): Promise<HoneypotCheck> {
     const args: Record<string, unknown> = { address: input.address };
-    if (input.chainId !== undefined) args.chainId = input.chainId;
-    return callAndParse(this.client, 'check_token', args, HoneypotCheckSchema);
-  }
-
-  async discoverPairs(input: HoneypotInput): Promise<HoneypotDiscoverPairs> {
-    const args: Record<string, unknown> = { address: input.address };
-    if (input.chainId !== undefined) args.chainId = input.chainId;
-    return callAndParse(this.client, 'discover_pairs', args, DiscoverPairsSchema);
+    if (input.chain !== undefined) args.chain = input.chain;
+    return callAndParse(this.client, 'check_honeypot', args, HoneypotCheckSchema);
   }
 
   async close(): Promise<void> {

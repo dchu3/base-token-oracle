@@ -2,7 +2,8 @@ import { z } from 'zod';
 import type { HoneypotCheck, HoneypotInput } from '../mcp/honeypot.js';
 import type { TtlLruCache } from '../cache.js';
 
-export const BASE_CHAIN_ID = 8453;
+/** Chain identifier passed to the honeypot MCP server. */
+export const BASE_CHAIN: HoneypotInput['chain'] = 'base';
 
 export interface HoneypotCheckService {
   checkToken(input: HoneypotInput): Promise<HoneypotCheck>;
@@ -176,7 +177,7 @@ export async function fetchHoneypotSummary(
   if (!honeypot) throw new HoneypotHelperError('no_honeypot');
   let upstream: HoneypotCheck;
   try {
-    upstream = await honeypot.checkToken({ address, chainId: BASE_CHAIN_ID });
+    upstream = await honeypot.checkToken({ address, chain: BASE_CHAIN });
   } catch (err) {
     const notAnalyzable = isNotAnalyzableError(err);
     if (notAnalyzable) throw new HoneypotHelperError('not_analyzable', notAnalyzable);

@@ -69,7 +69,7 @@ describe('GET /api/v1/x402/base/token/:address/honeypot', () => {
     expect(res.body.flags).not.toContain('high_buy_tax');
     expect(service.checkToken).toHaveBeenCalledWith({
       address: VALID_ADDRESS,
-      chainId: 8453,
+      chain: 'base',
     });
   });
 

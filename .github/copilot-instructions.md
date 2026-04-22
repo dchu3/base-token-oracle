@@ -136,7 +136,7 @@ For docker build to resolve sibling MCP repos, layout must be:
 <parent>/
 ├── base-token-oracle/      # this repo
 ├── dex-screener-mcp/
-├── base-mcp-honeypot/
+├── dex-honeypot-mcp/
 └── dex-blockscout-mcp/
 ```
 Build from the parent directory with `context: ..`.
