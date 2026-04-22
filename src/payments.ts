@@ -81,7 +81,8 @@ function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): PaymentConfig 
     return null;
   }
   const cdpKeyId = env.CDP_API_KEY_ID?.trim();
-  const cdpPrivateKey = env.CDP_API_KEY_PRIVATE_KEY?.trim();
+  const cdpPrivateKey =
+    env.CDP_API_KEY_PRIVATE_KEY?.trim() ?? env.CDP_API_KEY_SECRET?.trim();
   return {
     receivingAddress,
     facilitatorUrl,

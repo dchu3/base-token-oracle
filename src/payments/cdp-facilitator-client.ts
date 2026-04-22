@@ -1,4 +1,4 @@
-import { createHmac } from 'crypto';
+import { createPrivateKey, randomBytes, sign, type KeyObject } from 'crypto';
 import type { FacilitatorClient } from '@x402/core/server';
 import type {
   PaymentPayload,
@@ -11,94 +11,161 @@ import type {
 export interface CdpFacilitatorClientConfig {
   facilitatorUrl: string;
   cdpKeyId: string;
+  /**
+   * CDP API key secret. Either:
+   *   - A PEM-encoded Ed25519 private key (starting with `-----BEGIN`), OR
+   *   - A base64-encoded 64-byte libsodium-style Ed25519 keypair
+   *     (32-byte seed concatenated with 32-byte public key). This is the
+   *     default format emitted by the CDP portal.
+   */
   cdpPrivateKey: string;
+  /**
+   * Optional JWT lifetime in seconds. CDP recommends <= 120. Default 120.
+   */
+  jwtTtlSeconds?: number;
+}
+
+/**
+ * PKCS#8 DER prefix for a raw Ed25519 seed.
+ *   SEQUENCE {
+ *     INTEGER 0                       -- version
+ *     SEQUENCE { OID 1.3.101.112 }    -- Ed25519 algorithm
+ *     OCTET STRING { OCTET STRING ... } -- 32-byte seed
+ *   }
+ */
+const PKCS8_ED25519_PREFIX = Buffer.from(
+  '302e020100300506032b657004220420',
+  'hex',
+);
+
+function ed25519KeyFromSecret(secret: string): KeyObject {
+  const trimmed = secret.trim();
+  if (trimmed.includes('-----BEGIN')) {
+    return createPrivateKey(trimmed);
+  }
+
+  let raw: Buffer;
+  try {
+    raw = Buffer.from(trimmed, 'base64');
+  } catch {
+    throw new Error(
+      'CdpFacilitatorClient: cdpPrivateKey is not a valid PEM or base64 string',
+    );
+  }
+  if (raw.length !== 64 && raw.length !== 32) {
+    throw new Error(
+      `CdpFacilitatorClient: expected 32- or 64-byte Ed25519 key, got ${raw.length} bytes`,
+    );
+  }
+  const seed = raw.subarray(0, 32);
+  const pkcs8 = Buffer.concat([PKCS8_ED25519_PREFIX, seed]);
+  return createPrivateKey({ key: pkcs8, format: 'der', type: 'pkcs8' });
+}
+
+function base64UrlEncode(input: Buffer | string): string {
+  const buf = typeof input === 'string' ? Buffer.from(input) : input;
+  return buf
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 }
 
 /**
  * CDP-authenticated x402 facilitator client for Coinbase's CDP platform.
- * Implements HMAC-SHA256 signing for authenticated API requests to a
- * Coinbase-hosted x402 facilitator endpoint.
  *
- * Authentication scheme:
- * - Requests include an `X-CDP-API-Key` header with the API key ID
- * - Requests are signed with `X-CDP-Signature` using HMAC-SHA256
- * - Signature includes: timestamp, method, path, and body
- * - Timestamp is included in `X-CDP-Timestamp` header
+ * Builds a short-lived Ed25519 JWT (EdDSA) per request and sends it as
+ * `Authorization: Bearer <jwt>`, per
+ * https://docs.cdp.coinbase.com/api-reference/v2/authentication.
+ *
+ * JWT claims:
+ *   header:  { alg: "EdDSA", typ: "JWT", kid: <keyId>, nonce: <random> }
+ *   payload: {
+ *     sub:   <keyId>,
+ *     iss:   "cdp",
+ *     aud:   ["cdp_service"],
+ *     nbf:   <now>,
+ *     exp:   <now + ttl>,
+ *     uri:   "<METHOD> <host><path>"
+ *   }
  */
 export class CdpFacilitatorClient implements FacilitatorClient {
   private readonly facilitatorUrl: string;
   private readonly cdpKeyId: string;
-  private readonly cdpPrivateKey: string;
+  private readonly privateKey: KeyObject;
+  private readonly jwtTtlSeconds: number;
 
   constructor(config: CdpFacilitatorClientConfig) {
     if (!config.facilitatorUrl) {
-      throw new Error(
-        'CdpFacilitatorClient: facilitatorUrl is required',
-      );
+      throw new Error('CdpFacilitatorClient: facilitatorUrl is required');
     }
     if (!config.cdpKeyId) {
       throw new Error('CdpFacilitatorClient: cdpKeyId is required');
     }
     if (!config.cdpPrivateKey) {
-      throw new Error(
-        'CdpFacilitatorClient: cdpPrivateKey is required',
-      );
+      throw new Error('CdpFacilitatorClient: cdpPrivateKey is required');
     }
 
     this.facilitatorUrl = config.facilitatorUrl.replace(/\/$/, '');
     this.cdpKeyId = config.cdpKeyId;
-    this.cdpPrivateKey = config.cdpPrivateKey;
+    this.privateKey = ed25519KeyFromSecret(config.cdpPrivateKey);
+    this.jwtTtlSeconds = Math.max(1, config.jwtTtlSeconds ?? 120);
   }
 
   /**
-   * Create HMAC-SHA256 signature for CDP API requests.
+   * Build an Ed25519-signed JWT for the given HTTP request.
    *
-   * Signature message format:
-   *   `${timestamp}${method}${path}${body}`
-   *
-   * @param timestamp - Unix timestamp in milliseconds
-   * @param method - HTTP method (GET, POST, etc.)
-   * @param path - Request path (e.g., "/verify", "/settle", "/supported")
-   * @param body - Request body as JSON string (empty string for GET)
-   * @returns Base64-encoded HMAC-SHA256 signature
+   * @param method - HTTP method in upper case (GET, POST, ...)
+   * @param url    - Fully-resolved request URL (used to derive host + path)
    */
-  private createSignature(
-    timestamp: number,
-    method: string,
-    path: string,
-    body: string,
-  ): string {
-    const message = `${timestamp}${method}${path}${body}`;
-    const signature = createHmac('sha256', this.cdpPrivateKey)
-      .update(message)
-      .digest('base64');
-    return signature;
+  private createJwt(method: string, url: URL): string {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const nonce = randomBytes(8).toString('hex');
+
+    const header = {
+      alg: 'EdDSA',
+      typ: 'JWT',
+      kid: this.cdpKeyId,
+      nonce,
+    };
+    const payload = {
+      sub: this.cdpKeyId,
+      iss: 'cdp',
+      aud: ['cdp_service'],
+      nbf: nowSeconds,
+      exp: nowSeconds + this.jwtTtlSeconds,
+      uri: `${method.toUpperCase()} ${url.host}${url.pathname}`,
+    };
+
+    const encodedHeader = base64UrlEncode(JSON.stringify(header));
+    const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+    const signingInput = `${encodedHeader}.${encodedPayload}`;
+
+    const signature = sign(null, Buffer.from(signingInput), this.privateKey);
+    return `${signingInput}.${base64UrlEncode(signature)}`;
   }
 
   /**
    * Perform an authenticated request to a CDP facilitator endpoint.
    *
-   * @param path - The endpoint path (e.g., "verify", "settle", "supported")
-   * @param method - HTTP method (GET or POST)
-   * @param payload - Request body (can be undefined for GET requests)
-   * @returns Parsed JSON response
-   * @throws Error if the request fails or returns a non-2xx status
+   * @param path    - Endpoint path (e.g., "verify", "settle", "supported")
+   * @param method  - HTTP method
+   * @param payload - Optional JSON request body
+   * @throws Error with a message prefixed `CDP facilitator error` for HTTP
+   *         failures, or `CDP facilitator request failed` for network errors.
    */
   private async authenticatedRequest<T>(
     path: string,
     method: string,
     payload?: unknown,
   ): Promise<T> {
-    const timestamp = Date.now();
     const url = new URL(`${this.facilitatorUrl}/${path}`);
-    const requestPath = url.pathname;
     const body = payload ? JSON.stringify(this.toJsonSafe(payload)) : '';
-    const signature = this.createSignature(timestamp, method, requestPath, body);
+    const jwt = this.createJwt(method, url);
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'X-CDP-API-Key': this.cdpKeyId,
-      'X-CDP-Timestamp': timestamp.toString(),
-      'X-CDP-Signature': signature,
+      Authorization: `Bearer ${jwt}`,
     };
 
     try {
@@ -110,10 +177,9 @@ export class CdpFacilitatorClient implements FacilitatorClient {
 
       if (!response.ok) {
         const contentType = response.headers.get('content-type');
-        const errorBody =
-          contentType?.includes('application/json')
-            ? await response.json()
-            : await response.text();
+        const errorBody = contentType?.includes('application/json')
+          ? await response.json()
+          : await response.text();
         throw new Error(
           `CDP facilitator error (${response.status}): ${
             typeof errorBody === 'string'
@@ -137,77 +203,33 @@ export class CdpFacilitatorClient implements FacilitatorClient {
     }
   }
 
-  /**
-   * Verify a payment with the CDP facilitator.
-   *
-   * Sends a POST request to the `/verify` endpoint with the payment
-   * payload and requirements.
-   *
-   * @param paymentPayload - The payment to verify
-   * @param paymentRequirements - The requirements to verify against
-   * @returns Verification response indicating if the payment is valid
-   */
   async verify(
     paymentPayload: PaymentPayload,
     paymentRequirements: PaymentRequirements,
   ): Promise<VerifyResponse> {
-    const request = {
+    return this.authenticatedRequest<VerifyResponse>('verify', 'POST', {
       paymentPayload,
       paymentRequirements,
-    };
-    return this.authenticatedRequest<VerifyResponse>(
-      'verify',
-      'POST',
-      request,
-    );
+    });
   }
 
-  /**
-   * Settle a payment with the CDP facilitator.
-   *
-   * Sends a POST request to the `/settle` endpoint with the payment
-   * payload and requirements.
-   *
-   * @param paymentPayload - The payment to settle
-   * @param paymentRequirements - The requirements for settlement
-   * @returns Settlement response with transaction details
-   */
   async settle(
     paymentPayload: PaymentPayload,
     paymentRequirements: PaymentRequirements,
   ): Promise<SettleResponse> {
-    const request = {
+    return this.authenticatedRequest<SettleResponse>('settle', 'POST', {
       paymentPayload,
       paymentRequirements,
-    };
-    return this.authenticatedRequest<SettleResponse>(
-      'settle',
-      'POST',
-      request,
-    );
+    });
   }
 
-  /**
-   * Get supported payment kinds and extensions from the CDP facilitator.
-   *
-   * Sends a GET request to the `/supported` endpoint to discover what
-   * payment schemes and networks are available.
-   *
-   * @returns Supported payment kinds and extensions
-   */
   async getSupported(): Promise<SupportedResponse> {
-    return this.authenticatedRequest<SupportedResponse>(
-      'supported',
-      'GET',
-    );
+    return this.authenticatedRequest<SupportedResponse>('supported', 'GET');
   }
 
   /**
-   * Convert objects to JSON-safe format.
-   * Handles BigInt and other non-JSON-serializable types.
-   *
-   * @param obj - The object to convert
-   * @returns The JSON-safe representation of the object
+   * Recursively convert BigInt values to strings so the payload is
+   * JSON-serializable. Other primitives and plain objects pass through.
    */
   private toJsonSafe(obj: unknown): unknown {
     if (typeof obj === 'bigint') {

@@ -152,26 +152,26 @@ The oracle supports Coinbase's CDP facilitator as an alternative to generic HTTP
 **Getting API Keys:**
 - Create a Coinbase Developer Platform account at [developer.coinbase.com](https://developer.coinbase.com)
 - Navigate to the API Keys section and create a new API key
-- You'll receive both a key ID and private key — treat the private key as a secret (store in `.env`, not in version control)
-- See [Coinbase CDP Authentication Docs](https://docs.cdp.coinbase.com/coinbase-commerce/docs/api-intro) for detailed setup
+- You'll receive both a key ID and an API key secret — treat the secret as a password (store in `.env`, not in version control)
+- See [Coinbase CDP v2 Authentication](https://docs.cdp.coinbase.com/api-reference/v2/authentication) for details
 
 **Environment Setup:**
 
 Set these variables in `.env` to enable CDP facilitator:
 - `FACILITATOR_URL`: Must be set to `https://api.cdp.coinbase.com/platform/v2/x402`
 - `CDP_API_KEY_ID`: Your Coinbase CDP API key ID
-- `CDP_API_KEY_PRIVATE_KEY`: Your Coinbase CDP private key (keep secure)
+- `CDP_API_KEY_PRIVATE_KEY` (or `CDP_API_KEY_SECRET`): Your Ed25519 API key secret. Accepts either a PEM-encoded private key or the libsodium base64 format (seed‖pub) emitted by the CDP portal.
 
 **Behavior:**
-- If both `CDP_API_KEY_ID` and `CDP_API_KEY_PRIVATE_KEY` are set, the oracle uses `CdpFacilitatorClient` for payment validation
-- If these are not set, the oracle falls back to generic HTTP facilitator (requires `FACILITATOR_URL` and standard x402 behavior)
-- Request authentication uses HMAC-SHA256 signing with request timestamps to prevent replay attacks
+- If both `CDP_API_KEY_ID` and a key secret are set, the oracle uses `CdpFacilitatorClient` for payment validation
+- If these are not set, the oracle falls back to the generic `HTTPFacilitatorClient` (which sends no auth)
+- Authentication uses a short-lived (≤120s) Ed25519 JWT (`alg: EdDSA`) sent as `Authorization: Bearer …`, per the CDP v2 spec (claims: `iss=cdp`, `sub=keyId`, `aud=["cdp_service"]`, `nbf`, `exp`, `uri="METHOD host/path"`, random `nonce` in the header)
 
 **Example .env Configuration:**
 ```
 FACILITATOR_URL=https://api.cdp.coinbase.com/platform/v2/x402
 CDP_API_KEY_ID=your-api-key-id-here
-CDP_API_KEY_PRIVATE_KEY=your-private-key-here
+CDP_API_KEY_PRIVATE_KEY=your-api-key-secret-here
 RECEIVING_ADDRESS=0x...  # Your Base mainnet address
 PORT=8080
 ```
