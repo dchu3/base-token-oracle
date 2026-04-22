@@ -7,7 +7,7 @@ export type { McpClientOptions, McpToolCallResult } from './client.js';
 export { DexScreenerService } from './dexScreener.js';
 export type { DexScreenerPair } from './dexScreener.js';
 export { HoneypotService } from './honeypot.js';
-export type { HoneypotCheck, HoneypotDiscoverPairs, HoneypotInput } from './honeypot.js';
+export type { HoneypotCheck, HoneypotChain, HoneypotInput } from './honeypot.js';
 export { BlockscoutService } from './blockscout.js';
 export type {
   BlockscoutAddress,

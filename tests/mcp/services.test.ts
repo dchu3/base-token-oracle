@@ -112,7 +112,7 @@ describe('DexScreenerService', () => {
 });
 
 describe('HoneypotService', () => {
-  it('calls check_token with address and optional chainId', async () => {
+  it('calls check_honeypot with address and optional chain', async () => {
     const mock = new MockChild();
     const client = new McpStdioClient({
       name: 'hp',
@@ -121,7 +121,7 @@ describe('HoneypotService', () => {
     });
     const svc = new HoneypotService(client);
 
-    const promise = svc.checkToken({ address: '0xbeef', chainId: 8453 });
+    const promise = svc.checkToken({ address: '0xbeef', chain: 'base' });
     await initAndRespond(mock, client, {
       honeypotResult: { isHoneypot: false },
       simulationResult: { buyTax: 1, sellTax: 1 },
@@ -132,29 +132,8 @@ describe('HoneypotService', () => {
     const call = mock.lastJsonMatching('tools/call') as {
       params: { name: string; arguments: Record<string, unknown> };
     };
-    expect(call.params.name).toBe('check_token');
-    expect(call.params.arguments).toEqual({ address: '0xbeef', chainId: 8453 });
-    await svc.close();
-  });
-
-  it('calls discover_pairs', async () => {
-    const mock = new MockChild();
-    const client = new McpStdioClient({
-      name: 'hp',
-      command: 'dummy',
-      spawnImpl: (() => mock) as never,
-    });
-    const svc = new HoneypotService(client);
-
-    const promise = svc.discoverPairs({ address: '0xbeef' });
-    await initAndRespond(mock, client, { pairs: [{ address: '0xpair', chainId: 8453 }] });
-    const data = await promise;
-    expect(data.pairs?.[0]?.address).toBe('0xpair');
-
-    const call = mock.lastJsonMatching('tools/call') as {
-      params: { name: string };
-    };
-    expect(call.params.name).toBe('discover_pairs');
+    expect(call.params.name).toBe('check_honeypot');
+    expect(call.params.arguments).toEqual({ address: '0xbeef', chain: 'base' });
     await svc.close();
   });
 });

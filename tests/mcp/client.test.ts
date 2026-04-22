@@ -96,11 +96,11 @@ describe('McpStdioClient', () => {
     expect(client.isRunning).toBe(true);
 
     // Subsequent tools/call request
-    const callPromise = client.callTool('check_token', { address: '0xabc' });
+    const callPromise = client.callTool('check_honeypot', { address: '0xabc' });
     await waitFor(() => mock.written.join('').includes('"tools/call"'));
     const callMsg = mock.lastWrittenJson();
     expect(callMsg.method).toBe('tools/call');
-    expect(callMsg.params).toEqual({ name: 'check_token', arguments: { address: '0xabc' } });
+    expect(callMsg.params).toEqual({ name: 'check_honeypot', arguments: { address: '0xabc' } });
 
     mock.pushResponse({
       jsonrpc: '2.0',

@@ -34,7 +34,7 @@ reproducible and cheap to trust.
 |---|---|---|---|
 | `GET /healthz` | free | — | `{ ok: true }` |
 | `GET /api/v1/x402/base/token/{address}/market` | **0.005** | DexScreener MCP | price, Δ24h, FDV, mcap, volume, liquidity, top pool |
-| `GET /api/v1/x402/base/token/{address}/honeypot` | **0.01** | base-mcp-honeypot | `is_honeypot`, buy/sell/transfer tax, simulation result, reason |
+| `GET /api/v1/x402/base/token/{address}/honeypot` | **0.01** | dex-honeypot-mcp | `is_honeypot`, buy/sell/transfer tax, simulation result, reason |
 | `GET /api/v1/x402/base/token/{address}/forensics` | **0.02** | dex-blockscout-mcp | deployer, verified, holder count, top-10 % concentration, deployer %, LP-lock heuristic (`?pair=0x…`) |
 | `GET /api/v1/x402/base/token/{address}/report` | **0.03** | all three | composite + `risk.{score,level,flags}` + `generated_at` |
 
@@ -253,7 +253,7 @@ PRICE_REPORT=0.03
 
 # Stdio commands for upstream MCPs.
 MCP_DEXSCREENER_CMD=node /path/to/dex-screener-mcp/dist/server.js
-MCP_HONEYPOT_CMD=node /path/to/base-mcp-honeypot/dist/server.js
+MCP_HONEYPOT_CMD=node /path/to/dex-honeypot-mcp/dist/index.js
 MCP_BLOCKSCOUT_CMD=node /path/to/dex-blockscout-mcp/dist/server.js
 
 # In-memory cache TTL per (route,address).
@@ -265,9 +265,9 @@ CACHE_TTL_MS=45000
 ```bash
 npm install
 npm run build
-npm start          # node dist/server.js
+npm start          # node --env-file-if-exists=.env dist/server.js
 # or for development:
-npm run dev        # tsx watch
+npm run dev        # tsx watch --env-file-if-exists=.env
 ```
 
 ### Docker
@@ -276,7 +276,7 @@ A production bundle ships in this repo:
 
 - `Dockerfile` — multi-stage image containing the oracle plus prebuilt
   `dist/` of all three upstream MCPs (`dex-screener-mcp`,
-  `base-mcp-honeypot`, `dex-blockscout-mcp`). They run as stdio children of
+  `dex-honeypot-mcp`, `dex-blockscout-mcp`). They run as stdio children of
   the oracle process — no extra containers.
 - `docker-compose.prod.yml` — oracle + Caddy (auto-TLS).
 - `Caddyfile` — reverse-proxy / TLS terminator.
@@ -295,7 +295,7 @@ dir (the build context is `..`):
 <parent>/
 ├── base-token-oracle/      # this repo
 ├── dex-screener-mcp/
-├── base-mcp-honeypot/
+├── dex-honeypot-mcp/
 └── dex-blockscout-mcp/
 ```
 
@@ -391,7 +391,7 @@ normalization, scoring, and x402 gating.
 | MCP | Role | Source |
 |---|---|---|
 | `dex-screener-mcp` | Market layer (price, liquidity, volume, pool list) | [`dchu3/dex-screener-mcp`](https://github.com/dchu3/dex-screener-mcp) |
-| `base-mcp-honeypot` | Trap detection (Honeypot.is) | [`dchu3/base-mcp-honeypot`](https://github.com/dchu3/base-mcp-honeypot) |
+| `dex-honeypot-mcp` | Trap detection (Honeypot.is, multi-chain) | [`dchu3/dex-honeypot-mcp`](https://github.com/dchu3/dex-honeypot-mcp) |
 | `dex-blockscout-mcp` | On-chain forensics (Base Blockscout v2) | [`dchu3/dex-blockscout-mcp`](https://github.com/dchu3/dex-blockscout-mcp) |
 
 ## 11. License
