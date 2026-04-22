@@ -150,20 +150,23 @@ export function createReportRouter(deps: ReportRouterDeps): Router {
         }
         const address = raw.toLowerCase();
 
-        // Three-way fan-out with Promise.allSettled. Market and honeypot fire
-        // immediately; forensics chains off market so it can receive the
-        // `pair_address` from the top pool (for the LP-locked heuristic) —
-        // the three promises are still awaited together.
+        // Three-way fan-out: market, honeypot, and forensics all fire
+        // concurrently. Forensics wants the `pair_address` from market (for
+        // the LP-locked heuristic) but we don't want a slow market call to
+        // serialize the entire report — so we race market against a soft
+        // deadline and fall back to a pairless forensics fetch on timeout.
         const marketP = helpers.market(deps.dexScreener, address, cache);
         const honeypotP = helpers.honeypot(deps.honeypot, address, cache);
+        const PAIR_SOFT_DEADLINE_MS = 1500;
+        const pairP: Promise<string | null> = Promise.race([
+          marketP.then(
+            (m) => m.top_pool.pair_address ?? null,
+            () => null,
+          ),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), PAIR_SOFT_DEADLINE_MS)),
+        ]);
         const forensicsP = (async (): Promise<ForensicsResponse> => {
-          let pair: string | null = null;
-          try {
-            const m = await marketP;
-            pair = m.top_pool.pair_address ?? null;
-          } catch {
-            pair = null;
-          }
+          const pair = await pairP;
           return helpers.forensics(deps.blockscout, address, pair, cache);
         })();
 

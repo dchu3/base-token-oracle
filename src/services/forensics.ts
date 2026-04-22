@@ -63,9 +63,9 @@ function coerceInt(v: unknown): number | null {
 }
 
 function coerceBigInt(v: unknown): bigint | null {
-  if (typeof v === 'bigint') return v;
-  if (typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v)) return BigInt(v);
-  if (typeof v === 'string' && /^-?\d+$/u.test(v.trim())) {
+  if (typeof v === 'bigint') return v >= 0n ? v : null;
+  if (typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0) return BigInt(v);
+  if (typeof v === 'string' && /^\d+$/u.test(v.trim())) {
     try {
       return BigInt(v.trim());
     } catch {

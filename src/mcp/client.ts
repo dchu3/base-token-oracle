@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 const JSONRPC_VERSION = '2.0';
 const DEFAULT_PROTOCOL_VERSION = '2024-11-05';
 const DEFAULT_CALL_TIMEOUT_MS = 30_000;
+const MAX_STDOUT_BUFFER_BYTES = 8 * 1024 * 1024;
 
 export interface McpClientOptions {
   name: string;
@@ -122,6 +123,15 @@ export class McpStdioClient {
       await this.initPromise;
     } catch (err) {
       this.initPromise = null;
+      const child = this.child;
+      this.child = null;
+      if (child) {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // ignore — best-effort cleanup of a child that failed handshake.
+        }
+      }
       throw err;
     }
   }
@@ -155,6 +165,8 @@ export class McpStdioClient {
       this.failAllPending(err);
       this.child = null;
       this.initialized = false;
+      this.initPromise = null;
+      this.stdoutBuffer = '';
     });
     child.on('error', (err: Error) => {
       this.failAllPending(new McpError(`MCP process ${this.opts.name} error: ${err.message}`));
@@ -235,6 +247,21 @@ export class McpStdioClient {
 
   private onStdout(chunk: string): void {
     this.stdoutBuffer += chunk;
+    if (this.stdoutBuffer.length > MAX_STDOUT_BUFFER_BYTES) {
+      console.error(
+        `[mcp:${this.opts.name}] stdout buffer exceeded ${MAX_STDOUT_BUFFER_BYTES} bytes without newline; killing child`,
+      );
+      this.stdoutBuffer = '';
+      const child = this.child;
+      if (child) {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // ignore — exit handler will clean up state.
+        }
+      }
+      return;
+    }
     let newlineIdx: number;
     while ((newlineIdx = this.stdoutBuffer.indexOf('\n')) !== -1) {
       const line = this.stdoutBuffer.slice(0, newlineIdx).trim();

@@ -27,9 +27,9 @@ export function createForensicsRouter(deps: ForensicsDeps): Router {
       res.status(400).json({ error: 'invalid_address' });
       return;
     }
-    const address = rawAddr;
+    const address = rawAddr.toLowerCase();
     const pairQuery = typeof req.query.pair === 'string' ? req.query.pair : undefined;
-    const pairAddr = pairQuery && ADDRESS_REGEX.test(pairQuery) ? pairQuery : null;
+    const pairAddr = pairQuery && ADDRESS_REGEX.test(pairQuery) ? pairQuery.toLowerCase() : null;
 
     let body: ForensicsResponse;
     try {

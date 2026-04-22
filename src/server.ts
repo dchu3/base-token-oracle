@@ -41,22 +41,26 @@ export function createApp(options: CreateAppOptions = {}): Express {
   const mcp = options.mcp ?? createMcpManagerFromEnv();
   const cache = options.cache === undefined ? createCacheFromEnv() : options.cache;
   const basePath = '/api/v1/x402/base';
-  app.use(basePath, createMarketRouter({ dexScreener: mcp.dexScreener, cache }));
+  if (mcp.dexScreener) {
+    app.use(basePath, createMarketRouter({ dexScreener: mcp.dexScreener, cache }));
+  }
   if (mcp.honeypot) {
     app.use(basePath, createHoneypotRouter({ honeypot: mcp.honeypot, cache }));
   }
   if (mcp.blockscout) {
     app.use(basePath, createForensicsRouter({ blockscout: mcp.blockscout, cache }));
   }
-  app.use(
-    basePath,
-    createReportRouter({
-      dexScreener: mcp.dexScreener,
-      honeypot: mcp.honeypot,
-      blockscout: mcp.blockscout,
-      cache,
-    }),
-  );
+  if (mcp.dexScreener || mcp.honeypot || mcp.blockscout) {
+    app.use(
+      basePath,
+      createReportRouter({
+        dexScreener: mcp.dexScreener,
+        honeypot: mcp.honeypot,
+        blockscout: mcp.blockscout,
+        cache,
+      }),
+    );
+  }
 
   return app;
 }

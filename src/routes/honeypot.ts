@@ -22,10 +22,11 @@ export function createHoneypotRouter(deps: HoneypotRouterDeps): Router {
   const cache = deps.cache ?? null;
 
   router.get('/token/:address/honeypot', async (req: Request, res: Response) => {
-    const { address } = req.params;
-    if (!address || !ADDRESS_REGEX.test(address)) {
+    const raw = req.params.address;
+    if (!raw || !ADDRESS_REGEX.test(raw)) {
       return res.status(400).json({ error: 'invalid_address' });
     }
+    const address = raw.toLowerCase();
 
     let data: NormalizedHoneypot;
     try {

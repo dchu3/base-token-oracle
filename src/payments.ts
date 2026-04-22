@@ -98,40 +98,39 @@ function buildRoutes(config: PaymentConfig): RoutesConfig {
     payTo: config.receivingAddress,
     asset: BASE_USDC_ADDRESS,
   };
-  return {
-    [`GET ${BASE_PATH}/token/:address/market`]: {
-      accepts: {
-        ...commonAccept,
-        price: `$${config.prices.market}`,
-      },
+  const defs: Array<{ path: string; price: string; description: string }> = [
+    {
+      path: `${BASE_PATH}/token/:address/market`,
+      price: config.prices.market,
       description: 'Base token market snapshot (DexScreener)',
-      mimeType: 'application/json',
     },
-    [`GET ${BASE_PATH}/token/:address/honeypot`]: {
-      accepts: {
-        ...commonAccept,
-        price: `$${config.prices.honeypot}`,
-      },
+    {
+      path: `${BASE_PATH}/token/:address/honeypot`,
+      price: config.prices.honeypot,
       description: 'Honeypot.is simulation + tax analysis',
-      mimeType: 'application/json',
     },
-    [`GET ${BASE_PATH}/token/:address/forensics`]: {
-      accepts: {
-        ...commonAccept,
-        price: `$${config.prices.forensics}`,
-      },
+    {
+      path: `${BASE_PATH}/token/:address/forensics`,
+      price: config.prices.forensics,
       description: 'On-chain forensics from Blockscout',
-      mimeType: 'application/json',
     },
-    [`GET ${BASE_PATH}/token/:address/report`]: {
-      accepts: {
-        ...commonAccept,
-        price: `$${config.prices.report}`,
-      },
+    {
+      path: `${BASE_PATH}/token/:address/report`,
+      price: config.prices.report,
       description: 'Composite risk report across all three sources',
-      mimeType: 'application/json',
     },
-  };
+  ];
+  const routes: RoutesConfig = {};
+  for (const d of defs) {
+    const accepts = { ...commonAccept, price: `$${d.price}` };
+    const entry = { accepts, description: d.description, mimeType: 'application/json' };
+    routes[`GET ${d.path}`] = entry;
+    // Register HEAD so Express's implicit HEAD->GET handling cannot bypass
+    // the paywall. Without this, a HEAD request skips x402 entirely and
+    // still executes the paid GET handler (all backend work, no body).
+    routes[`HEAD ${d.path}`] = entry;
+  }
+  return routes;
 }
 
 /**
