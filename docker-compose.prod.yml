@@ -1,0 +1,53 @@
+# Production stack: oracle + Caddy (auto-TLS).
+#
+# Must be invoked from the parent directory that holds all 4 sibling repos,
+# because the build context is `..` relative to this file.
+#
+#   cd <parent>
+#   DOMAIN=base-oracle.example.com \
+#     docker compose -f base-token-oracle/docker-compose.prod.yml up -d --build
+#
+# Required env (via shell or base-token-oracle/.env):
+#   RECEIVING_ADDRESS, FACILITATOR_URL, DOMAIN
+# Optional: PRICE_MARKET, PRICE_HONEYPOT, PRICE_FORENSICS, PRICE_REPORT, CACHE_TTL_MS
+
+services:
+  oracle:
+    build:
+      context: ..
+      dockerfile: base-token-oracle/Dockerfile
+      target: runtime
+    image: base-token-oracle:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "8080"
+    labels:
+      com.base-token-oracle.role: "upstream"
+      caddy.upstream: "oracle:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - oracle
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN=your.host before docker compose up}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

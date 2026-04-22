@@ -1,0 +1,10 @@
+{$DOMAIN:localhost} {
+    encode zstd gzip
+
+    @api path /api/* /healthz /llms.txt /openapi.yaml
+    reverse_proxy @api oracle:8080
+
+    log {
+        output stdout
+    }
+}

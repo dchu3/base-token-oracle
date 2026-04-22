@@ -1,0 +1,349 @@
+import { z } from 'zod';
+import type {
+  BlockscoutAddress,
+  BlockscoutChain,
+  BlockscoutHolders,
+  BlockscoutToken,
+} from '../mcp/blockscout.js';
+import type { TtlLruCache } from '../cache.js';
+
+export interface ForensicsBlockscout {
+  getToken(addressHash: string, chain?: BlockscoutChain): Promise<BlockscoutToken>;
+  getTokenHolders(addressHash: string, chain?: BlockscoutChain): Promise<BlockscoutHolders>;
+  getAddress(addressHash: string, chain?: BlockscoutChain): Promise<BlockscoutAddress>;
+}
+
+const TokenOutSchema = z.object({
+  name: z.string().nullable(),
+  symbol: z.string().nullable(),
+  decimals: z.number().int().nonnegative().nullable(),
+  total_supply: z.string().nullable(),
+  type: z.string().nullable(),
+  verified: z.boolean().nullable(),
+});
+
+const DeployerOutSchema = z
+  .object({
+    address: z.string(),
+    is_contract: z.boolean().nullable(),
+    tx_count: z.number().int().nonnegative().nullable(),
+  })
+  .nullable();
+
+export const ForensicsResponseSchema = z.object({
+  address: z.string(),
+  chain: z.literal('base'),
+  token: TokenOutSchema,
+  deployer: DeployerOutSchema,
+  holder_count: z.number().int().nonnegative().nullable(),
+  top10_concentration_pct: z.number().nullable(),
+  deployer_holdings_pct: z.number().nullable(),
+  lp_locked_heuristic: z.boolean().nullable(),
+  flags: z.array(z.string()),
+});
+
+export type ForensicsResponse = z.infer<typeof ForensicsResponseSchema>;
+
+const DEAD_ADDRESSES = new Set<string>([
+  '0x000000000000000000000000000000000000dead',
+  '0x0000000000000000000000000000000000000000',
+]);
+
+function toLowerHex(s: string | null | undefined): string | null {
+  return typeof s === 'string' && s.length > 0 ? s.toLowerCase() : null;
+}
+
+function coerceInt(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isFinite(v)) return Math.trunc(v);
+  if (typeof v === 'string' && v.trim().length > 0) {
+    const n = Number(v);
+    if (Number.isFinite(n)) return Math.trunc(n);
+  }
+  return null;
+}
+
+function coerceBigInt(v: unknown): bigint | null {
+  if (typeof v === 'bigint') return v;
+  if (typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v)) return BigInt(v);
+  if (typeof v === 'string' && /^-?\d+$/u.test(v.trim())) {
+    try {
+      return BigInt(v.trim());
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function readRecord(v: unknown): Record<string, unknown> {
+  return (v && typeof v === 'object' ? (v as Record<string, unknown>) : {}) as Record<
+    string,
+    unknown
+  >;
+}
+
+function percentBigInt(numerator: bigint, denominator: bigint): number | null {
+  if (denominator <= 0n) return null;
+  const scaled = (numerator * 10_000n) / denominator;
+  return Number(scaled) / 100;
+}
+
+function extractHolders(
+  holders: BlockscoutHolders,
+): Array<{ address: string | null; value: bigint | null }> {
+  const items = holders.items ?? [];
+  return items.map((h) => ({
+    address: toLowerHex(h.address?.hash ?? null),
+    value: coerceBigInt(h.value),
+  }));
+}
+
+function top10ConcentrationPct(
+  holders: Array<{ value: bigint | null }>,
+  totalSupply: bigint | null,
+): number | null {
+  if (!totalSupply || totalSupply <= 0n) return null;
+  if (holders.length === 0) return null;
+  const values = holders
+    .map((h) => h.value)
+    .filter((v): v is bigint => v !== null && v >= 0n)
+    .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))
+    .slice(0, 10);
+  if (values.length === 0) return null;
+  const sum = values.reduce<bigint>((acc, v) => acc + v, 0n);
+  return percentBigInt(sum, totalSupply);
+}
+
+function deployerHoldingsPct(
+  holders: Array<{ address: string | null; value: bigint | null }>,
+  totalSupply: bigint | null,
+  deployerAddress: string | null,
+): number | null {
+  if (!deployerAddress || !totalSupply || totalSupply <= 0n) return null;
+  const needle = deployerAddress.toLowerCase();
+  const match = holders.find((h) => h.address === needle);
+  if (!match || match.value === null) return null;
+  return percentBigInt(match.value, totalSupply);
+}
+
+function lpLockedFromPairHolders(pairHolders: BlockscoutHolders | null): boolean | null {
+  if (!pairHolders) return null;
+  const items = pairHolders.items ?? [];
+  if (items.length === 0) return null;
+  const parsed = items.map((h) => ({
+    address: toLowerHex(h.address?.hash ?? null),
+    value: coerceBigInt(h.value),
+  }));
+  const top5 = parsed
+    .filter((h): h is { address: string; value: bigint } => h.address !== null && h.value !== null)
+    .sort((a, b) => (a.value > b.value ? -1 : a.value < b.value ? 1 : 0))
+    .slice(0, 5);
+  for (const h of top5) {
+    if (DEAD_ADDRESSES.has(h.address)) return true;
+  }
+  return false;
+}
+
+function isNotFoundError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  return /not[_ ]?found|\b404\b/iu.test(msg);
+}
+
+function looksLikeMissingToken(token: BlockscoutToken): boolean {
+  const rec = readRecord(token);
+  const msg = typeof rec.message === 'string' ? rec.message : '';
+  if (/not found/iu.test(msg)) return true;
+  return !token.name && !token.symbol && !token.total_supply && !token.type;
+}
+
+function extractCreatorFromToken(token: BlockscoutToken): string | null {
+  const rec = readRecord(token);
+  const direct = typeof rec.creator_address_hash === 'string' ? rec.creator_address_hash : null;
+  if (direct) return direct;
+  const nested = readRecord(rec.token);
+  const fromNested =
+    typeof nested.creator_address_hash === 'string' ? nested.creator_address_hash : null;
+  return fromNested;
+}
+
+function extractTxCount(addr: BlockscoutAddress): number | null {
+  const rec = readRecord(addr);
+  return (
+    coerceInt(rec.transactions_count) ??
+    coerceInt(rec.tx_count) ??
+    coerceInt(rec.transaction_count) ??
+    null
+  );
+}
+
+function extractVerified(
+  token: BlockscoutToken,
+  deployerContract: BlockscoutAddress | null,
+): boolean | null {
+  const tokenRec = readRecord(token);
+  if (typeof tokenRec.is_verified === 'boolean') return tokenRec.is_verified;
+  const nested = readRecord(tokenRec.token);
+  if (typeof nested.is_verified === 'boolean') return nested.is_verified;
+  if (deployerContract && typeof deployerContract.is_verified === 'boolean') {
+    return deployerContract.is_verified;
+  }
+  return null;
+}
+
+function buildFlags(params: {
+  top10Pct: number | null;
+  deployerPct: number | null;
+  verified: boolean | null;
+  lpLocked: boolean | null;
+}): string[] {
+  const flags: string[] = [];
+  if (params.top10Pct !== null && params.top10Pct > 70) flags.push('high_concentration');
+  if (params.deployerPct !== null && params.deployerPct > 20) flags.push('deployer_holds_large');
+  if (params.verified === false) flags.push('unverified_contract');
+  if (params.lpLocked === true) flags.push('lp_locked');
+  return flags;
+}
+
+export type ForensicsErrorCode =
+  | 'no_blockscout'
+  | 'token_not_found'
+  | 'upstream_failure'
+  | 'response_invalid';
+
+export class ForensicsHelperError extends Error {
+  readonly code: ForensicsErrorCode;
+  readonly detail?: string;
+  constructor(code: ForensicsErrorCode, detail?: string) {
+    super(detail ?? code);
+    this.code = code;
+    this.detail = detail;
+    this.name = 'ForensicsHelperError';
+  }
+}
+
+/**
+ * Fetch + normalize Blockscout forensics for a token. When `pair` is provided
+ * and well-formed, the top-5 LP-token holders are inspected to populate
+ * `lp_locked_heuristic`.
+ */
+export async function fetchForensicsSummary(
+  blockscout: ForensicsBlockscout | null,
+  address: string,
+  pair: string | null = null,
+): Promise<ForensicsResponse> {
+  if (!blockscout) throw new ForensicsHelperError('no_blockscout');
+
+  const pairAddr = pair && /^0x[a-fA-F0-9]{40}$/u.test(pair) ? pair : null;
+
+  let tokenInfo: BlockscoutToken;
+  let holdersResp: BlockscoutHolders;
+  let pairHoldersResp: BlockscoutHolders | null = null;
+  try {
+    const [tokenResult, holdersResult, pairHoldersResult] = await Promise.all([
+      blockscout.getToken(address, 'base'),
+      blockscout.getTokenHolders(address, 'base'),
+      pairAddr
+        ? blockscout.getTokenHolders(pairAddr, 'base').catch(() => null)
+        : Promise.resolve(null),
+    ]);
+    tokenInfo = tokenResult;
+    holdersResp = holdersResult;
+    pairHoldersResp = pairHoldersResult;
+  } catch (err) {
+    if (isNotFoundError(err)) throw new ForensicsHelperError('token_not_found');
+    throw new ForensicsHelperError(
+      'upstream_failure',
+      err instanceof Error ? err.message : undefined,
+    );
+  }
+
+  if (looksLikeMissingToken(tokenInfo)) {
+    throw new ForensicsHelperError('token_not_found');
+  }
+
+  let creatorHash = toLowerHex(extractCreatorFromToken(tokenInfo));
+  let contractAddrInfo: BlockscoutAddress | null = null;
+  if (!creatorHash) {
+    try {
+      contractAddrInfo = await blockscout.getAddress(address, 'base');
+      creatorHash = toLowerHex(contractAddrInfo.creator_address_hash ?? null);
+    } catch {
+      contractAddrInfo = null;
+    }
+  }
+
+  let deployerInfo: z.infer<typeof DeployerOutSchema> = null;
+  if (creatorHash) {
+    try {
+      const addr = await blockscout.getAddress(creatorHash, 'base');
+      deployerInfo = {
+        address: creatorHash,
+        is_contract: typeof addr.is_contract === 'boolean' ? addr.is_contract : null,
+        tx_count: extractTxCount(addr),
+      };
+    } catch {
+      deployerInfo = { address: creatorHash, is_contract: null, tx_count: null };
+    }
+  }
+
+  const holders = extractHolders(holdersResp);
+  const totalSupply = coerceBigInt(tokenInfo.total_supply);
+  const top10Pct = top10ConcentrationPct(holders, totalSupply);
+  const deployerPct = deployerHoldingsPct(holders, totalSupply, creatorHash);
+  const lpLocked = lpLockedFromPairHolders(pairHoldersResp);
+  const verified = extractVerified(tokenInfo, contractAddrInfo);
+
+  const holderCount = (() => {
+    const rec = readRecord(tokenInfo);
+    const declared = coerceInt(rec.holders_count ?? rec.holders);
+    if (declared !== null) return declared;
+    const items = holdersResp.items ?? [];
+    return items.length > 0 ? items.length : null;
+  })();
+
+  const decimals = coerceInt(tokenInfo.decimals);
+
+  const payload: ForensicsResponse = {
+    address,
+    chain: 'base',
+    token: {
+      name: tokenInfo.name ?? null,
+      symbol: tokenInfo.symbol ?? null,
+      decimals,
+      total_supply: tokenInfo.total_supply ?? null,
+      type: tokenInfo.type ?? null,
+      verified,
+    },
+    deployer: deployerInfo,
+    holder_count: holderCount,
+    top10_concentration_pct: top10Pct,
+    deployer_holdings_pct: deployerPct,
+    lp_locked_heuristic: lpLocked,
+    flags: buildFlags({ top10Pct, deployerPct, verified, lpLocked }),
+  };
+
+  const validated = ForensicsResponseSchema.safeParse(payload);
+  if (!validated.success) {
+    throw new ForensicsHelperError('response_invalid', validated.error.message);
+  }
+  return validated.data;
+}
+
+export function forensicsCacheKey(address: string, pair: string | null | undefined): string {
+  return pair ? `forensics:${address}:${pair.toLowerCase()}` : `forensics:${address}`;
+}
+
+export async function cachedFetchForensicsSummary(
+  blockscout: ForensicsBlockscout | null,
+  address: string,
+  pair: string | null,
+  cache: TtlLruCache<unknown> | null,
+): Promise<ForensicsResponse> {
+  if (!cache) return fetchForensicsSummary(blockscout, address, pair);
+  const key = forensicsCacheKey(address, pair);
+  const hit = cache.get(key) as ForensicsResponse | undefined;
+  if (hit !== undefined) return hit;
+  const value = await fetchForensicsSummary(blockscout, address, pair);
+  cache.set(key, value);
+  return value;
+}
