@@ -17,17 +17,19 @@ function makeApp(service: HoneypotCheckService) {
 const VALID_ADDRESS = '0x4200000000000000000000000000000000000006';
 
 const honeypotNegativeUpstream: HoneypotCheck = {
-  summary: { verdict: 'SAFE_TO_TRADE', reason: 'Safe to trade' },
-  taxes: { buyBps: 100, sellBps: 150, transferBps: 0 },
-  flags: { isHoneypot: false, simulationSuccess: true },
-  risk: { description: 'Low risk' },
+  honeypotResult: { isHoneypot: false },
+  simulationResult: { buyTax: 1, sellTax: 1.5, transferTax: 0 },
+  simulationSuccess: true,
+  flags: [],
+  summary: { risk: 'low' },
 } as unknown as HoneypotCheck;
 
 const honeypotPositiveUpstream: HoneypotCheck = {
-  summary: { verdict: 'DO_NOT_TRADE', reason: 'Cannot sell' },
-  taxes: { buyBps: 500, sellBps: 9900, transferBps: 0 },
-  flags: { isHoneypot: true, simulationSuccess: false },
-  risk: { description: 'Honeypot detected' },
+  honeypotResult: { isHoneypot: true, honeypotReason: 'Cannot sell' },
+  simulationResult: { buyTax: 5, sellTax: 99, transferTax: 0 },
+  simulationSuccess: false,
+  flags: [],
+  summary: { risk: 'high' },
 } as unknown as HoneypotCheck;
 
 describe('GET /api/v1/x402/base/token/:address/honeypot', () => {

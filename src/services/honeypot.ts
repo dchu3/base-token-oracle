@@ -45,14 +45,7 @@ const UpstreamShapeSchema = z
       .partial()
       .passthrough()
       .optional(),
-    flags: z
-      .object({
-        isHoneypot: z.boolean().optional(),
-        simulationSuccess: z.boolean().optional(),
-      })
-      .partial()
-      .passthrough()
-      .optional(),
+    flags: z.array(z.string()).optional(),
     risk: z
       .object({
         description: z.string().optional(),
@@ -106,7 +99,7 @@ export function normalizeHoneypot(address: string, raw: HoneypotCheck): Normaliz
   const parsed = UpstreamShapeSchema.safeParse(raw);
   const u = parsed.success ? parsed.data : {};
 
-  const is_honeypot = u.flags?.isHoneypot ?? u.honeypotResult?.isHoneypot ?? null;
+  const is_honeypot = u.honeypotResult?.isHoneypot ?? null;
 
   const buy_tax = bpsToPercent(u.taxes?.buyBps, u.taxes?.buyTax ?? u.simulationResult?.buyTax);
   const sell_tax = bpsToPercent(u.taxes?.sellBps, u.taxes?.sellTax ?? u.simulationResult?.sellTax);
@@ -115,7 +108,7 @@ export function normalizeHoneypot(address: string, raw: HoneypotCheck): Normaliz
     u.taxes?.transferTax ?? u.simulationResult?.transferTax,
   );
 
-  const simulation_success = u.flags?.simulationSuccess ?? u.simulationSuccess ?? null;
+  const simulation_success = u.simulationSuccess ?? null;
 
   const honeypot_reason =
     u.honeypotResult?.honeypotReason ?? u.summary?.reason ?? u.risk?.description ?? null;
