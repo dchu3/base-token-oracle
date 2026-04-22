@@ -14,7 +14,7 @@ npm run dev            # Watch mode with tsx — recompiles on changes
 
 **Start the server:**
 ```bash
-npm start              # node dist/server.js on port (default 8080)
+npm start              # node --env-file-if-exists=.env dist/server.js (port default 8080)
 ```
 
 **Testing:**

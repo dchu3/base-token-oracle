@@ -265,9 +265,9 @@ CACHE_TTL_MS=45000
 ```bash
 npm install
 npm run build
-npm start          # node dist/server.js
+npm start          # node --env-file-if-exists=.env dist/server.js
 # or for development:
-npm run dev        # tsx watch
+npm run dev        # tsx watch --env-file-if-exists=.env
 ```
 
 ### Docker
