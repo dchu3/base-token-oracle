@@ -16,6 +16,7 @@ import {
   x402ResourceServer,
 } from '@x402/core/server';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
+import { CdpFacilitatorClient } from './cdp-facilitator-client.js';
 
 /**
  * Base mainnet network identifier in CAIP-2 form used by x402.
@@ -61,6 +62,16 @@ export interface PaymentConfig {
    * hook here.
    */
   protectedRequestHook?: ProtectedRequestHook;
+  /**
+   * CDP API key ID. When provided along with cdpPrivateKey, enables
+   * CdpFacilitatorClient usage instead of HTTPFacilitatorClient.
+   */
+  cdpKeyId?: string;
+  /**
+   * CDP API private key. When provided along with cdpKeyId, enables
+   * CdpFacilitatorClient usage instead of HTTPFacilitatorClient.
+   */
+  cdpPrivateKey?: string;
 }
 
 function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): PaymentConfig | null {
@@ -69,6 +80,8 @@ function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): PaymentConfig 
   if (!receivingAddress || !facilitatorUrl) {
     return null;
   }
+  const cdpKeyId = env.CDP_API_KEY_ID?.trim();
+  const cdpPrivateKey = env.CDP_API_KEY_PRIVATE_KEY?.trim();
   return {
     receivingAddress,
     facilitatorUrl,
@@ -78,6 +91,8 @@ function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): PaymentConfig 
       forensics: env.PRICE_FORENSICS ?? '0.02',
       report: env.PRICE_REPORT ?? '0.03',
     },
+    ...(cdpKeyId && { cdpKeyId }),
+    ...(cdpPrivateKey && { cdpPrivateKey }),
   };
 }
 
@@ -136,13 +151,22 @@ function buildRoutes(config: PaymentConfig): RoutesConfig {
 /**
  * Attach the x402 `paymentMiddleware` to the given Express app. Must be
  * called BEFORE the route routers are mounted so the paywall runs first.
+ * Uses CdpFacilitatorClient if CDP credentials are provided, otherwise
+ * falls back to HTTPFacilitatorClient.
  */
 export function applyX402(app: Express, config: PaymentConfig): void {
   const schemes: SchemeRegistration[] = config.schemes ?? [
     { network: BASE_NETWORK, server: new ExactEvmScheme() },
   ];
   const facilitator: FacilitatorClient =
-    config.facilitatorClient ?? new HTTPFacilitatorClient({ url: config.facilitatorUrl });
+    config.facilitatorClient ??
+    (config.cdpKeyId && config.cdpPrivateKey
+      ? (new CdpFacilitatorClient({
+          facilitatorUrl: config.facilitatorUrl,
+          cdpKeyId: config.cdpKeyId,
+          cdpPrivateKey: config.cdpPrivateKey,
+        }) as FacilitatorClient)
+      : new HTTPFacilitatorClient({ url: config.facilitatorUrl }));
   const routes = buildRoutes(config);
 
   const resourceServer = new x402ResourceServer(facilitator);
