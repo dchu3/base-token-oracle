@@ -45,7 +45,7 @@ export class CdpFacilitatorClient implements FacilitatorClient {
       );
     }
 
-    this.facilitatorUrl = config.facilitatorUrl;
+    this.facilitatorUrl = config.facilitatorUrl.replace(/\/$/, '');
     this.cdpKeyId = config.cdpKeyId;
     this.cdpPrivateKey = config.cdpPrivateKey;
   }
@@ -90,15 +90,10 @@ export class CdpFacilitatorClient implements FacilitatorClient {
     payload?: unknown,
   ): Promise<T> {
     const timestamp = Date.now();
-    const body = payload ? JSON.stringify(this.toJsonSafe(payload)) : '';
-    const signature = this.createSignature(
-      timestamp,
-      method,
-      `/${path}`,
-      body,
-    );
-
     const url = new URL(`${this.facilitatorUrl}/${path}`);
+    const requestPath = url.pathname;
+    const body = payload ? JSON.stringify(this.toJsonSafe(payload)) : '';
+    const signature = this.createSignature(timestamp, method, requestPath, body);
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-CDP-API-Key': this.cdpKeyId,
@@ -130,10 +125,15 @@ export class CdpFacilitatorClient implements FacilitatorClient {
 
       return (await response.json()) as T;
     } catch (error) {
-      if (error instanceof Error) {
-        throw new Error(`CDP facilitator request failed: ${error.message}`);
+      if (
+        error instanceof Error &&
+        error.message.startsWith('CDP facilitator error')
+      ) {
+        throw error;
       }
-      throw error;
+      throw new Error(
+        `CDP facilitator request failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 

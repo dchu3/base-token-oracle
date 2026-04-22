@@ -16,7 +16,7 @@ import {
   x402ResourceServer,
 } from '@x402/core/server';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
-import { CdpFacilitatorClient } from './cdp-facilitator-client.js';
+import { CdpFacilitatorClient } from './payments/cdp-facilitator-client.js';
 
 /**
  * Base mainnet network identifier in CAIP-2 form used by x402.
