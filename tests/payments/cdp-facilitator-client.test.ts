@@ -56,6 +56,7 @@ const baseConfig = {
 };
 
 const mockPaymentPayload: PaymentPayload = {
+  x402Version: 2,
   kind: 'erc20',
   paymentReference: 'ref123',
   amount: BigInt('1000000000000000000'),
@@ -268,6 +269,8 @@ describe('CdpFacilitatorClient', () => {
       expect(url).toBe('https://facilitator.example.com/verify');
       expect(init.method).toBe('POST');
       const body = JSON.parse(init.body);
+      // x402Version lifted onto the top-level request body (spec-compliant).
+      expect(body.x402Version).toBe(2);
       // BigInt in payload is serialized as a string.
       expect(body.paymentPayload.amount).toBe('1000000000000000000');
       expect(body.paymentRequirements.minimumAmount).toBe(
@@ -289,6 +292,8 @@ describe('CdpFacilitatorClient', () => {
         .calls[0];
       expect(url).toBe('https://facilitator.example.com/settle');
       expect(init.method).toBe('POST');
+      const body = JSON.parse(init.body);
+      expect(body.x402Version).toBe(2);
       expect(result).toEqual({ success: true, transactionHash: '0xabc' });
     });
 
@@ -336,6 +341,100 @@ describe('CdpFacilitatorClient', () => {
       await expect(client.getSupported()).rejects.toThrow(
         /CDP facilitator request failed: boom/,
       );
+    });
+
+    it('passes an AbortSignal to fetch for request timeout', async () => {
+      const client = new CdpFacilitatorClient({
+        ...baseConfig,
+        requestTimeoutMs: 2500,
+      });
+      (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        jsonResponse(200, { kinds: [], extensions: [] }),
+      );
+      await client.getSupported();
+      const init = (fetch as unknown as ReturnType<typeof vi.fn>).mock
+        .calls[0][1];
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('retries getSupported() on 429 with backoff', async () => {
+      vi.useFakeTimers();
+      try {
+        const client = new CdpFacilitatorClient({
+          ...baseConfig,
+          rateLimitRetries: 2,
+        });
+        const mockFetch = fetch as unknown as ReturnType<typeof vi.fn>;
+        mockFetch
+          .mockResolvedValueOnce(
+            new Response('rate limited', {
+              status: 429,
+              headers: { 'content-type': 'text/plain' },
+            }),
+          )
+          .mockResolvedValueOnce(
+            jsonResponse(200, { kinds: ['erc20'], extensions: [] }),
+          );
+
+        const p = client.getSupported();
+        // First call happens synchronously; advance past the 500ms backoff.
+        await vi.advanceTimersByTimeAsync(500);
+        const result = await p;
+        expect(result).toEqual({ kinds: ['erc20'], extensions: [] });
+        expect(mockFetch).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('stops retrying 429 after rateLimitRetries is exhausted', async () => {
+      vi.useFakeTimers();
+      try {
+        const client = new CdpFacilitatorClient({
+          ...baseConfig,
+          rateLimitRetries: 1,
+        });
+        const mockFetch = fetch as unknown as ReturnType<typeof vi.fn>;
+        mockFetch
+          .mockResolvedValueOnce(
+            new Response('rate limited', {
+              status: 429,
+              headers: { 'content-type': 'text/plain' },
+            }),
+          )
+          .mockResolvedValueOnce(
+            new Response('still rate limited', {
+              status: 429,
+              headers: { 'content-type': 'text/plain' },
+            }),
+          );
+
+        const p = client.getSupported().catch((e) => e);
+        await vi.advanceTimersByTimeAsync(500);
+        const err = (await p) as Error;
+        expect(err.message).toMatch(/CDP facilitator error \(429\)/);
+        expect(mockFetch).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not retry verify() on 429 (POST is non-idempotent here)', async () => {
+      const client = new CdpFacilitatorClient({
+        ...baseConfig,
+        rateLimitRetries: 3,
+      });
+      const mockFetch = fetch as unknown as ReturnType<typeof vi.fn>;
+      mockFetch.mockResolvedValueOnce(
+        new Response('rate limited', {
+          status: 429,
+          headers: { 'content-type': 'text/plain' },
+        }),
+      );
+      await expect(
+        client.verify(mockPaymentPayload, mockPaymentRequirements),
+      ).rejects.toThrow(/CDP facilitator error \(429\)/);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
   });
 });
