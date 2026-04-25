@@ -394,6 +394,41 @@ normalization, scoring, and x402 gating.
 | `dex-honeypot-mcp` | Trap detection (Honeypot.is, multi-chain) | [`dchu3/dex-honeypot-mcp`](https://github.com/dchu3/dex-honeypot-mcp) |
 | `dex-blockscout-mcp` | On-chain forensics (Base Blockscout v2) | [`dchu3/dex-blockscout-mcp`](https://github.com/dchu3/dex-blockscout-mcp) |
 
-## 11. License
+## 11. Bazaar discovery (agentic.market listing)
+
+Each paid GET route declares an [x402 Bazaar Discovery
+extension](https://docs.cdp.coinbase.com/x402/bazaar) so the **CDP
+Facilitator** can index it and surface it on
+[agentic.market](https://agentic.market). The metadata lives in
+`src/discovery.ts` and is attached to the route config in
+`src/payments.ts`; the JSON Schemas for `output` are derived from the
+existing Zod response schemas via `zod-to-json-schema`, so they stay in
+sync with the actual responses.
+
+**Required configuration**
+
+For your deployment to be indexed you must:
+
+1. Use the CDP facilitator. Set `FACILITATOR_URL=https://api.cdp.coinbase.com/platform/v2/x402`.
+2. Provide CDP API credentials: `CDP_API_KEY_ID` and `CDP_API_KEY_PRIVATE_KEY` (or `CDP_API_KEY_SECRET`). Without these the server falls back to the generic `HTTPFacilitatorClient`, which is unauthenticated and **not** indexed by Bazaar.
+3. Process at least one successful **settlement** per route through CDP. Verify alone is not enough — discovery indexing runs after settle completes. The simplest bootstrap is to call each of the four paid endpoints once after deploy.
+
+**Verifying it works**
+
+- On verify/settle, the CDP facilitator returns an `EXTENSION-RESPONSES`
+  HTTP header. A value like `{"bazaar":{"status":"processing"}}` means the
+  declaration was accepted (indexing is asynchronous);
+  `{"bazaar":{"status":"success"}}` means it's live; `"rejected"` carries
+  a `rejectedReason`.
+- Once indexed, your routes appear in:
+  - `GET https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources?payTo=<RECEIVING_ADDRESS>`
+  - `GET https://api.cdp.coinbase.com/platform/v2/x402/discovery/search?query=<text>`
+  - and the public UI at https://agentic.market.
+
+**Out of scope:** non-CDP facilitators are not indexed by Bazaar. The HEAD
+mirrors that protect the paywall do not declare discovery metadata —
+discovery covers the GET resource only.
+
+## 12. License
 
 MIT.
