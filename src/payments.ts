@@ -18,7 +18,13 @@ import {
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { bazaarResourceServerExtension } from '@x402/extensions';
 import { CdpFacilitatorClient } from './payments/cdp-facilitator-client.js';
-import { buildDiscoveryExtensions } from './discovery.js';
+import {
+  buildDiscoveryExtensions,
+  marketDescription,
+  honeypotDescription,
+  forensicsDescription,
+  reportDescription,
+} from './discovery.js';
 
 /**
  * Base mainnet network identifier in CAIP-2 form used by x402.
@@ -120,22 +126,22 @@ function buildRoutes(config: PaymentConfig): RoutesConfig {
     {
       path: `${BASE_PATH}/token/:address/market`,
       price: config.prices.market,
-      description: 'Base token market snapshot (DexScreener)',
+      description: marketDescription,
     },
     {
       path: `${BASE_PATH}/token/:address/honeypot`,
       price: config.prices.honeypot,
-      description: 'Honeypot.is simulation + tax analysis',
+      description: honeypotDescription,
     },
     {
       path: `${BASE_PATH}/token/:address/forensics`,
       price: config.prices.forensics,
-      description: 'On-chain forensics from Blockscout',
+      description: forensicsDescription,
     },
     {
       path: `${BASE_PATH}/token/:address/report`,
       price: config.prices.report,
-      description: 'Composite risk report across all three sources',
+      description: reportDescription,
     },
   ];
   const routes: RoutesConfig = {};
