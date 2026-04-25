@@ -16,7 +16,15 @@ import {
   x402ResourceServer,
 } from '@x402/core/server';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
+import { bazaarResourceServerExtension } from '@x402/extensions';
 import { CdpFacilitatorClient } from './payments/cdp-facilitator-client.js';
+import {
+  buildDiscoveryExtensions,
+  marketDescription,
+  honeypotDescription,
+  forensicsDescription,
+  reportDescription,
+} from './discovery.js';
 
 /**
  * Base mainnet network identifier in CAIP-2 form used by x402.
@@ -118,33 +126,42 @@ function buildRoutes(config: PaymentConfig): RoutesConfig {
     {
       path: `${BASE_PATH}/token/:address/market`,
       price: config.prices.market,
-      description: 'Base token market snapshot (DexScreener)',
+      description: marketDescription,
     },
     {
       path: `${BASE_PATH}/token/:address/honeypot`,
       price: config.prices.honeypot,
-      description: 'Honeypot.is simulation + tax analysis',
+      description: honeypotDescription,
     },
     {
       path: `${BASE_PATH}/token/:address/forensics`,
       price: config.prices.forensics,
-      description: 'On-chain forensics from Blockscout',
+      description: forensicsDescription,
     },
     {
       path: `${BASE_PATH}/token/:address/report`,
       price: config.prices.report,
-      description: 'Composite risk report across all three sources',
+      description: reportDescription,
     },
   ];
   const routes: RoutesConfig = {};
+  const discoveries = buildDiscoveryExtensions();
   for (const d of defs) {
     const accepts = { ...commonAccept, price: `$${d.price}` };
-    const entry = { accepts, description: d.description, mimeType: 'application/json' };
-    routes[`GET ${d.path}`] = entry;
+    const getKey = `GET ${d.path}`;
+    const baseEntry = {
+      accepts,
+      description: d.description,
+      mimeType: 'application/json',
+    };
+    const discoveryExt = discoveries[getKey as `GET ${string}`];
+    routes[getKey] = discoveryExt ? { ...baseEntry, extensions: discoveryExt } : baseEntry;
     // Register HEAD so Express's implicit HEAD->GET handling cannot bypass
     // the paywall. Without this, a HEAD request skips x402 entirely and
     // still executes the paid GET handler (all backend work, no body).
-    routes[`HEAD ${d.path}`] = entry;
+    // HEAD entries intentionally omit the bazaar discovery extension —
+    // discovery indexes the GET resource only.
+    routes[`HEAD ${d.path}`] = baseEntry;
   }
   return routes;
 }
@@ -174,6 +191,11 @@ export function applyX402(app: Express, config: PaymentConfig): void {
   for (const s of schemes) {
     resourceServer.register(s.network, s.server);
   }
+  // Enable Bazaar discovery indexing. The CDP facilitator will pick up
+  // `extensions` declared on each route and surface them at
+  // /v2/x402/discovery/resources (and on agentic.market) after the first
+  // successful settlement per route.
+  resourceServer.registerExtension(bazaarResourceServerExtension);
   const httpServer = new x402HTTPResourceServer(resourceServer, routes);
   if (config.protectedRequestHook) {
     httpServer.onProtectedRequest(config.protectedRequestHook);
