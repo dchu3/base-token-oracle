@@ -52,14 +52,10 @@ describe('TtlLruCache', () => {
 
   it('keys are isolated — no collisions across distinct keys', () => {
     const cache = new TtlLruCache<string>({ ttlMs: 1000, max: 10 });
-    cache.set('market:0xabc', 'M');
-    cache.set('honeypot:0xabc', 'H');
-    cache.set('forensics:0xabc', 'F');
-    cache.set('forensics:0xabc:0xpair', 'FP');
-    expect(cache.get('market:0xabc')).toBe('M');
-    expect(cache.get('honeypot:0xabc')).toBe('H');
-    expect(cache.get('forensics:0xabc')).toBe('F');
-    expect(cache.get('forensics:0xabc:0xpair')).toBe('FP');
+    cache.set('report:0xabc', 'R');
+    cache.set('report:0xabc:0xpair', 'RP');
+    expect(cache.get('report:0xabc')).toBe('R');
+    expect(cache.get('report:0xabc:0xpair')).toBe('RP');
   });
 
   it('getOrCompute computes on miss and caches; reuses on subsequent hits', async () => {

@@ -1,37 +1,22 @@
 # syntax=docker/dockerfile:1.7
 #
-# Multi-stage build for base-token-oracle + its three stdio MCP children.
+# Multi-stage build for base-token-oracle + its Blockscout stdio MCP child.
 #
 # IMPORTANT: the build context must be the PARENT directory that contains
-# all four sibling repos:
+# all necessary repos:
 #
 #   <parent>/
 #     base-token-oracle/      <-- this repo
-#     dex-screener-mcp/
-#     dex-honeypot-mcp/
 #     dex-blockscout-mcp/
 #
 # Invoke with:
 #   docker build -f base-token-oracle/Dockerfile -t base-token-oracle <parent>
-# or via the companion docker-compose.prod.yml (which sets context: ..).
 
 ############################
-# Stage 1: build the 3 MCPs
+# Stage 1: build the MCP
 ############################
 FROM node:20-alpine AS mcps-builder
 WORKDIR /build
-
-# dex-screener-mcp
-COPY dex-screener-mcp/package.json dex-screener-mcp/package-lock.json* ./dex-screener-mcp/
-RUN cd dex-screener-mcp && npm ci
-COPY dex-screener-mcp/ ./dex-screener-mcp/
-RUN cd dex-screener-mcp && npm run build
-
-# dex-honeypot-mcp (emits dist/index.js)
-COPY dex-honeypot-mcp/package.json dex-honeypot-mcp/package-lock.json* ./dex-honeypot-mcp/
-RUN cd dex-honeypot-mcp && npm ci
-COPY dex-honeypot-mcp/ ./dex-honeypot-mcp/
-RUN cd dex-honeypot-mcp && npm run build
 
 # dex-blockscout-mcp
 COPY dex-blockscout-mcp/package.json dex-blockscout-mcp/package-lock.json* ./dex-blockscout-mcp/
@@ -52,19 +37,13 @@ COPY base-token-oracle/ ./
 RUN npm run build
 
 ############################
-# Stage 3: production-only deps (oracle + each MCP)
+# Stage 3: production-only deps
 ############################
 FROM node:20-alpine AS prod-deps
 WORKDIR /deps
 
 COPY base-token-oracle/package.json base-token-oracle/package-lock.json* ./oracle/
 RUN cd oracle && npm ci --omit=dev
-
-COPY dex-screener-mcp/package.json dex-screener-mcp/package-lock.json* ./dex-screener-mcp/
-RUN cd dex-screener-mcp && npm ci --omit=dev
-
-COPY dex-honeypot-mcp/package.json dex-honeypot-mcp/package-lock.json* ./dex-honeypot-mcp/
-RUN cd dex-honeypot-mcp && npm ci --omit=dev
 
 COPY dex-blockscout-mcp/package.json dex-blockscout-mcp/package-lock.json* ./dex-blockscout-mcp/
 RUN cd dex-blockscout-mcp && npm ci --omit=dev
@@ -87,18 +66,6 @@ COPY --from=prod-deps     --chown=oracle:oracle /deps/oracle/node_modules       
 COPY --from=oracle-builder --chown=oracle:oracle /build/oracle/dist               /app/oracle/dist
 COPY --from=oracle-builder --chown=oracle:oracle /build/oracle/public             /app/oracle/public
 
-# MCP: dex-screener-mcp
-COPY --from=mcps-builder --chown=oracle:oracle /build/dex-screener-mcp/package.json      /app/mcps/dex-screener-mcp/package.json
-COPY --from=mcps-builder --chown=oracle:oracle /build/dex-screener-mcp/package-lock.json /app/mcps/dex-screener-mcp/package-lock.json
-COPY --from=prod-deps    --chown=oracle:oracle /deps/dex-screener-mcp/node_modules       /app/mcps/dex-screener-mcp/node_modules
-COPY --from=mcps-builder --chown=oracle:oracle /build/dex-screener-mcp/dist              /app/mcps/dex-screener-mcp/dist
-
-# MCP: dex-honeypot-mcp  (entry is dist/index.js)
-COPY --from=mcps-builder --chown=oracle:oracle /build/dex-honeypot-mcp/package.json      /app/mcps/dex-honeypot-mcp/package.json
-COPY --from=mcps-builder --chown=oracle:oracle /build/dex-honeypot-mcp/package-lock.json /app/mcps/dex-honeypot-mcp/package-lock.json
-COPY --from=prod-deps    --chown=oracle:oracle /deps/dex-honeypot-mcp/node_modules       /app/mcps/dex-honeypot-mcp/node_modules
-COPY --from=mcps-builder --chown=oracle:oracle /build/dex-honeypot-mcp/dist              /app/mcps/dex-honeypot-mcp/dist
-
 # MCP: dex-blockscout-mcp
 COPY --from=mcps-builder --chown=oracle:oracle /build/dex-blockscout-mcp/package.json      /app/mcps/dex-blockscout-mcp/package.json
 COPY --from=mcps-builder --chown=oracle:oracle /build/dex-blockscout-mcp/package-lock.json /app/mcps/dex-blockscout-mcp/package-lock.json
@@ -110,8 +77,6 @@ WORKDIR /app/oracle
 
 ENV NODE_ENV=production \
     PORT=8080 \
-    MCP_DEXSCREENER_CMD="node /app/mcps/dex-screener-mcp/dist/index.js" \
-    MCP_HONEYPOT_CMD="node /app/mcps/dex-honeypot-mcp/dist/index.js" \
     MCP_BLOCKSCOUT_CMD="node /app/mcps/dex-blockscout-mcp/dist/index.js"
 
 EXPOSE 8080
