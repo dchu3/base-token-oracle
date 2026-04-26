@@ -4,12 +4,9 @@ info:
   version: 0.1.0
   summary: x402-gated Base token intelligence for AI agents.
   description: |
-    Pay-per-call HTTP aggregator that fuses DexScreener, Honeypot.is, and
-    Blockscout into deterministic JSON for Base (chainId 8453) tokens. Paid
-    routes are gated by [x402 v2](https://docs.cdp.coinbase.com/x402/welcome)
-    and settle in USDC on Base. A composite `/report` endpoint returns a
-    0–10 `risk.score` with explicit flags so agents can make decisions
-    without an LLM in the hot path.
+    Pay-per-call HTTP service that provides on-chain forensics and security reports 
+    for Base (chainId 8453) tokens. Powered by Blockscout. Paid routes are gated 
+    by [x402 v2](https://docs.cdp.coinbase.com/x402/welcome) and settle in USDC on Base.
   license:
     name: MIT
   contact:
@@ -22,10 +19,7 @@ x-x402:
   tokenSymbol: USDC
   spec: https://docs.cdp.coinbase.com/x402/welcome
   prices:
-    "GET /api/v1/x402/base/token/{address}/market": "0.005"
-    "GET /api/v1/x402/base/token/{address}/honeypot": "0.01"
-    "GET /api/v1/x402/base/token/{address}/forensics": "0.02"
-    "GET /api/v1/x402/base/token/{address}/report": "0.03"
+    "GET /api/v1/x402/base/token/{address}/report": "0.01"
 
 servers:
   - url: https://base-token-oracle.example.com
@@ -55,78 +49,31 @@ paths:
                   ok: { type: boolean, const: true }
               example: { ok: true }
 
-  /api/v1/x402/base/token/{address}/market:
+  /api/v1/x402/base/token/{address}/report:
     get:
       tags: [x402-paid]
-      summary: Token market snapshot (DexScreener).
-      operationId: getTokenMarket
-      x-x402-price: "0.005"
-      parameters:
-        - $ref: "#/components/parameters/TokenAddress"
-      responses:
-        "200":
-          description: Market snapshot.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/MarketResponse" }
-              example: { $ref: "#/components/examples/MarketExample/value" }
-        "400": { $ref: "#/components/responses/InvalidAddress" }
-        "402": { $ref: "#/components/responses/PaymentRequired" }
-        "404":
-          description: No pools found for token on Base.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-              example: { error: "no_pools_found" }
-        "502": { $ref: "#/components/responses/UpstreamFailure" }
-
-  /api/v1/x402/base/token/{address}/honeypot:
-    get:
-      tags: [x402-paid]
-      summary: Honeypot.is verdict + taxes.
-      operationId: getTokenHoneypot
+      summary: On-chain forensics and security report.
+      operationId: getTokenReport
+      description: |
+        Returns token metadata, deployer profile, holder distribution, and LP-lock
+        heuristics for any Base ERC-20. Sourced from Blockscout via MCP.
       x-x402-price: "0.01"
-      parameters:
-        - $ref: "#/components/parameters/TokenAddress"
-      responses:
-        "200":
-          description: Normalized honeypot check.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/HoneypotResponse" }
-              example: { $ref: "#/components/examples/HoneypotExample/value" }
-        "400": { $ref: "#/components/responses/InvalidAddress" }
-        "402": { $ref: "#/components/responses/PaymentRequired" }
-        "404":
-          description: Token cannot be analyzed (no liquidity / pair not found).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-              example: { error: "token_not_analyzable", detail: "no pair found" }
-        "502": { $ref: "#/components/responses/UpstreamFailure" }
-
-  /api/v1/x402/base/token/{address}/forensics:
-    get:
-      tags: [x402-paid]
-      summary: On-chain forensics from Blockscout.
-      operationId: getTokenForensics
-      x-x402-price: "0.02"
       parameters:
         - $ref: "#/components/parameters/TokenAddress"
         - name: pair
           in: query
           required: false
-          description: Optional LP pair address. When supplied, `lp_locked_heuristic` is computed by checking whether a dead/zero address is in the top-5 holders of the LP token.
+          description: Optional LP pair address to trigger LP-lock heuristic.
           schema:
             type: string
             pattern: "^0x[a-fA-F0-9]{40}$"
       responses:
         "200":
-          description: Forensics snapshot.
+          description: Token report.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ForensicsResponse" }
-              example: { $ref: "#/components/examples/ForensicsExample/value" }
+              schema: { $ref: "#/components/schemas/ReportResponse" }
+              example: { $ref: "#/components/examples/ReportExample/value" }
         "400": { $ref: "#/components/responses/InvalidAddress" }
         "402": { $ref: "#/components/responses/PaymentRequired" }
         "404":
@@ -135,30 +82,6 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
               example: { error: "token_not_found" }
-        "502": { $ref: "#/components/responses/UpstreamFailure" }
-
-  /api/v1/x402/base/token/{address}/report:
-    get:
-      tags: [x402-paid]
-      summary: Composite DD report with deterministic risk_score.
-      operationId: getTokenReport
-      description: |
-        Fans out to `/market`, `/honeypot`, and `/forensics` (via internal MCP
-        clients) using `Promise.allSettled`. Any subset may be `null` on
-        partial upstream failure; `risk` is still computed from whatever
-        returned. See the `risk` schema for the scoring rules.
-      x-x402-price: "0.03"
-      parameters:
-        - $ref: "#/components/parameters/TokenAddress"
-      responses:
-        "200":
-          description: Composite report.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ReportResponse" }
-              example: { $ref: "#/components/examples/ReportExample/value" }
-        "400": { $ref: "#/components/responses/InvalidAddress" }
-        "402": { $ref: "#/components/responses/PaymentRequired" }
         "502": { $ref: "#/components/responses/UpstreamFailure" }
 
 components:
@@ -181,7 +104,7 @@ components:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
           example: { error: "invalid_address" }
     UpstreamFailure:
-      description: Upstream MCP (DexScreener / Honeypot.is / Blockscout) failed or returned an invalid shape.
+      description: Upstream MCP (Blockscout) failed or returned an invalid shape.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -190,7 +113,6 @@ components:
       description: |
         x402 v2 payment challenge. Client must sign a USDC `transferWithAuthorization`
         for the declared amount and re-request with `X-PAYMENT: <base64(payload)>`.
-        See the authoritative spec at https://docs.cdp.coinbase.com/x402/welcome.
       headers:
         WWW-Authenticate:
           schema:
@@ -204,9 +126,9 @@ components:
             accepts:
               - scheme: exact
                 network: base
-                maxAmountRequired: "30000"
+                maxAmountRequired: "10000"
                 resource: "/api/v1/x402/base/token/0x4200000000000000000000000000000000000006/report"
-                description: "Composite token report."
+                description: "Token security report."
                 payTo: "0xYourReceivingAddressHere"
                 maxTimeoutSeconds: 60
                 asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
@@ -224,10 +146,6 @@ components:
 
     PaymentRequirements:
       type: object
-      description: |
-        x402 v2 `PaymentRequirements` envelope (skeleton). The authoritative schema
-        lives at https://docs.cdp.coinbase.com/x402/welcome — consult it before
-        building your own client; `awal` and `@x402/fetch` handle it for you.
       required: [x402Version, accepts]
       properties:
         x402Version: { type: integer, const: 2 }
@@ -239,74 +157,12 @@ components:
             properties:
               scheme: { type: string, example: "exact" }
               network: { type: string, example: "base" }
-              maxAmountRequired:
-                type: string
-                description: Amount in USDC base units (6 decimals) as a decimal string.
-                example: "30000"
+              maxAmountRequired: { type: string, example: "10000" }
               resource: { type: string }
-              description: { type: string }
-              payTo:
-                type: string
-                description: Receiving address (configure via `RECEIVING_ADDRESS`).
-              maxTimeoutSeconds: { type: integer, example: 60 }
-              asset:
-                type: string
-                description: ERC-20 token address (USDC on Base).
-                example: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-              extra:
-                type: object
-                additionalProperties: true
+              payTo: { type: string }
+              asset: { type: string }
 
-    MarketResponse:
-      type: object
-      required:
-        [address, chain, price_usd, price_change_24h_pct, fdv, market_cap, volume_24h_usd, liquidity_usd, top_pool, pool_count]
-      properties:
-        address: { type: string }
-        chain: { type: string, const: "base" }
-        price_usd: { type: number, nullable: true }
-        price_change_24h_pct: { type: number, nullable: true }
-        fdv: { type: number, nullable: true }
-        market_cap: { type: number, nullable: true }
-        volume_24h_usd: { type: number, nullable: true }
-        liquidity_usd: { type: number, nullable: true }
-        top_pool:
-          type: object
-          required: [pair_address, dex_id, base_token_symbol, quote_token_symbol, pair_created_at]
-          properties:
-            pair_address: { type: string, nullable: true }
-            dex_id: { type: string, nullable: true }
-            base_token_symbol: { type: string, nullable: true }
-            quote_token_symbol: { type: string, nullable: true }
-            pair_created_at:
-              type: string
-              format: date-time
-              nullable: true
-        pool_count: { type: integer, minimum: 0 }
-
-    HoneypotResponse:
-      type: object
-      required:
-        [address, chain, is_honeypot, buy_tax, sell_tax, transfer_tax, simulation_success, honeypot_reason, flags]
-      properties:
-        address: { type: string }
-        chain: { type: string, const: "base" }
-        is_honeypot: { type: boolean, nullable: true }
-        buy_tax:
-          type: number
-          nullable: true
-          description: Percent (e.g. `5` = 5%).
-        sell_tax: { type: number, nullable: true }
-        transfer_tax: { type: number, nullable: true }
-        simulation_success: { type: boolean, nullable: true }
-        honeypot_reason: { type: string, nullable: true }
-        flags:
-          type: array
-          items:
-            type: string
-            enum: [honeypot, simulation_failed, high_buy_tax, high_sell_tax]
-
-    ForensicsResponse:
+    ReportResponse:
       type: object
       required:
         [address, chain, token, deployer, holder_count, top10_concentration_pct, deployer_holdings_pct, lp_locked_heuristic, flags]
@@ -319,11 +175,8 @@ components:
           properties:
             name: { type: string, nullable: true }
             symbol: { type: string, nullable: true }
-            decimals: { type: integer, minimum: 0, nullable: true }
-            total_supply:
-              type: string
-              nullable: true
-              description: Raw integer (wei-scale) as a string.
+            decimals: { type: integer, nullable: true }
+            total_supply: { type: string, nullable: true }
             type: { type: string, nullable: true }
             verified: { type: boolean, nullable: true }
         deployer:
@@ -333,105 +186,19 @@ components:
           properties:
             address: { type: string }
             is_contract: { type: boolean, nullable: true }
-            tx_count: { type: integer, minimum: 0, nullable: true }
-        holder_count: { type: integer, minimum: 0, nullable: true }
+            tx_count: { type: integer, nullable: true }
+        holder_count: { type: integer, nullable: true }
         top10_concentration_pct: { type: number, nullable: true }
         deployer_holdings_pct: { type: number, nullable: true }
-        lp_locked_heuristic:
-          type: boolean
-          nullable: true
-          description: Null unless `?pair=0x…` is supplied on the request.
+        lp_locked_heuristic: { type: boolean, nullable: true }
         flags:
           type: array
           items:
             type: string
             enum: [high_concentration, deployer_holds_large, unverified_contract, lp_locked]
 
-    RiskBlock:
-      type: object
-      required: [score, level, flags]
-      properties:
-        score:
-          type: integer
-          minimum: 0
-          maximum: 10
-          description: |
-            Deterministic 0–10 score. Rules:
-            `+4` honeypot, `+2` high_tax, `+2` high_concentration,
-            `+1` deployer_holds_large, `+1` low_liquidity, `+1` new_pair,
-            `-1` lp_locked. Clamped to [0,10].
-        level:
-          type: string
-          enum: [clean, caution, risky, critical]
-          description: "0–2 clean, 3–5 caution, 6–8 risky, 9–10 critical."
-        flags:
-          type: array
-          items:
-            type: string
-            enum:
-              - honeypot_detected
-              - high_tax
-              - high_concentration
-              - deployer_holds_large
-              - low_liquidity
-              - new_pair
-              - lp_locked
-
-    ReportResponse:
-      type: object
-      required: [address, chain, market, honeypot, forensics, risk, generated_at]
-      properties:
-        address: { type: string }
-        chain: { type: string, const: "base" }
-        market:
-          oneOf:
-            - $ref: "#/components/schemas/MarketResponse"
-            - type: "null"
-        honeypot:
-          oneOf:
-            - $ref: "#/components/schemas/HoneypotResponse"
-            - type: "null"
-        forensics:
-          oneOf:
-            - $ref: "#/components/schemas/ForensicsResponse"
-            - type: "null"
-        risk: { $ref: "#/components/schemas/RiskBlock" }
-        generated_at:
-          type: string
-          format: date-time
-
   examples:
-    MarketExample:
-      value:
-        address: "0x4200000000000000000000000000000000000006"
-        chain: "base"
-        price_usd: 3412.55
-        price_change_24h_pct: 1.42
-        fdv: 41000000000
-        market_cap: 41000000000
-        volume_24h_usd: 12500000
-        liquidity_usd: 8400000
-        top_pool:
-          pair_address: "0xd0b53d9277642d899df5c87a3966a349a798f224"
-          dex_id: "aerodrome"
-          base_token_symbol: "WETH"
-          quote_token_symbol: "USDC"
-          pair_created_at: "2023-08-16T02:04:00.000Z"
-        pool_count: 37
-
-    HoneypotExample:
-      value:
-        address: "0x4200000000000000000000000000000000000006"
-        chain: "base"
-        is_honeypot: false
-        buy_tax: 0
-        sell_tax: 0
-        transfer_tax: 0
-        simulation_success: true
-        honeypot_reason: null
-        flags: []
-
-    ForensicsExample:
+    ReportExample:
       value:
         address: "0x4200000000000000000000000000000000000006"
         chain: "base"
@@ -451,16 +218,3 @@ components:
         deployer_holdings_pct: 0
         lp_locked_heuristic: null
         flags: []
-
-    ReportExample:
-      value:
-        address: "0x4200000000000000000000000000000000000006"
-        chain: "base"
-        market: { $ref: "#/components/examples/MarketExample/value" }
-        honeypot: { $ref: "#/components/examples/HoneypotExample/value" }
-        forensics: { $ref: "#/components/examples/ForensicsExample/value" }
-        risk:
-          score: 0
-          level: "clean"
-          flags: []
-        generated_at: "2025-01-15T12:34:56.000Z"

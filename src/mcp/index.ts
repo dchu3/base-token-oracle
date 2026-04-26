@@ -1,13 +1,7 @@
 import { BlockscoutService } from './blockscout.js';
-import { DexScreenerService } from './dexScreener.js';
-import { HoneypotService } from './honeypot.js';
 
 export { McpStdioClient, McpError, McpTimeoutError, parseCommand } from './client.js';
 export type { McpClientOptions, McpToolCallResult } from './client.js';
-export { DexScreenerService } from './dexScreener.js';
-export type { DexScreenerPair } from './dexScreener.js';
-export { HoneypotService } from './honeypot.js';
-export type { HoneypotCheck, HoneypotChain, HoneypotInput } from './honeypot.js';
 export { BlockscoutService } from './blockscout.js';
 export type {
   BlockscoutAddress,
@@ -18,8 +12,6 @@ export type {
 } from './blockscout.js';
 
 export interface McpManagerConfig {
-  dexScreenerCmd?: string;
-  honeypotCmd?: string;
   blockscoutCmd?: string;
   callTimeoutMs?: number;
 }
@@ -30,18 +22,10 @@ export interface McpManagerConfig {
  * starts on its first `callTool`).
  */
 export class McpManager {
-  readonly dexScreener: DexScreenerService | null;
-  readonly honeypot: HoneypotService | null;
   readonly blockscout: BlockscoutService | null;
 
   constructor(config: McpManagerConfig) {
     const { callTimeoutMs } = config;
-    this.dexScreener = config.dexScreenerCmd
-      ? new DexScreenerService({ command: config.dexScreenerCmd, callTimeoutMs })
-      : null;
-    this.honeypot = config.honeypotCmd
-      ? new HoneypotService({ command: config.honeypotCmd, callTimeoutMs })
-      : null;
     this.blockscout = config.blockscoutCmd
       ? new BlockscoutService({ command: config.blockscoutCmd, callTimeoutMs })
       : null;
@@ -49,8 +33,6 @@ export class McpManager {
 
   async shutdown(): Promise<void> {
     await Promise.allSettled([
-      this.dexScreener?.close(),
-      this.honeypot?.close(),
       this.blockscout?.close(),
     ]);
   }
@@ -58,8 +40,6 @@ export class McpManager {
 
 export function createMcpManagerFromEnv(env: NodeJS.ProcessEnv = process.env): McpManager {
   return new McpManager({
-    dexScreenerCmd: env.MCP_DEXSCREENER_CMD || undefined,
-    honeypotCmd: env.MCP_HONEYPOT_CMD || undefined,
     blockscoutCmd: env.MCP_BLOCKSCOUT_CMD || undefined,
   });
 }

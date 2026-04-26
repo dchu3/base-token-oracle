@@ -2,7 +2,7 @@
   "name": "base-token-oracle",
   "version": "0.1.0",
   "private": true,
-  "description": "x402-gated Base token intelligence aggregator (DexScreener + Honeypot.is + Blockscout).",
+  "description": "x402-gated Base token forensics service powered by Blockscout.",
   "type": "module",
   "main": "dist/server.js",
   "scripts": {

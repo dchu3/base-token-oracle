@@ -1,51 +1,15 @@
 # base-token-oracle
 
-> x402-gated Base token intelligence for agents: market data, honeypot detection, and on-chain forensics fused into a single deterministic paid call — purpose-built for autonomous trading bots.
+> x402-gated Base token forensics for agents: on-chain metadata, holder distribution, and security heuristics fused into a single deterministic paid call — purpose-built for autonomous trading bots.
 
-`base-token-oracle` aggregates three free Base-native data sources (DexScreener,
-Honeypot.is, Blockscout) behind a pay-per-call HTTP surface. Every paid route is
-gated by [x402 v2](https://docs.cdp.coinbase.com/x402/welcome) and settled in
-USDC on Base mainnet (chainId 8453). No accounts, no API keys — agents pay per
-request.
+Aggregates Blockscout data behind a pay-per-call HTTP surface. Every paid route is settled in USDC on Base via the x402 protocol.
 
-## Endpoints
+## Paid Endpoints
 
-- [Health](https://base-token-oracle.example.com/healthz): Liveness probe. Free.
-- [Token Market](https://base-token-oracle.example.com/api/v1/x402/base/token/{address}/market): Price, 24h change, FDV, market cap, volume, liquidity, and top pool on Base from DexScreener. $0.005 USDC per call.
-- [Token Honeypot](https://base-token-oracle.example.com/api/v1/x402/base/token/{address}/honeypot): Honeypot.is verdict, buy/sell/transfer tax, simulation success, reason. $0.01 USDC per call.
-- [Token Forensics](https://base-token-oracle.example.com/api/v1/x402/base/token/{address}/forensics): Deployer, verified status, holder count, top-10 concentration %, deployer holdings %, LP-lock heuristic (supply `?pair=0x…`). $0.02 USDC per call.
-- [Token Report](https://base-token-oracle.example.com/api/v1/x402/base/token/{address}/report): Composite DD report — fans out to all three upstreams, returns `market`, `honeypot`, `forensics`, plus deterministic `risk.score` (0–10), `risk.level` (`clean`/`caution`/`risky`/`critical`), and `risk.flags[]`. $0.03 USDC per call.
+- [Token Report](https://base-token-oracle.example.com/api/v1/x402/base/token/{address}/report): On-chain forensics for any Base ERC-20: name, symbol, supply, verified status, deployer profile, holder count, top-10 concentration, and LP-lock heuristic. $0.01 USDC per call.
 
-## Payment
+## Design Principles
 
-- Protocol: x402 v2
-- Network: Base mainnet (chainId 8453)
-- Token: USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`)
-- Flow: unauthenticated `GET` → `402 Payment Required` with `PaymentRequirements` JSON → client signs a USDC `transferWithAuthorization` → re-request with `X-PAYMENT: <base64>` header → `200` with payload + `X-PAYMENT-RESPONSE` receipt.
-
-## Examples
-
-Call the composite report with the `awal` CLI (handles 402 → sign → retry automatically):
-
-```
-npx awal x402 pay https://base-token-oracle.example.com/api/v1/x402/base/token/0x4200000000000000000000000000000000000006/report
-```
-
-Or with `@x402/fetch` in TypeScript:
-
-```ts
-import { wrapFetchWithPayment } from '@x402/fetch';
-const pay = wrapFetchWithPayment(fetch, wallet);
-const res = await pay('https://base-token-oracle.example.com/api/v1/x402/base/token/0x4200000000000000000000000000000000000006/market');
-```
-
-## Schema
-
-- OpenAPI 3.1: https://base-token-oracle.example.com/openapi.yaml
-- Source: https://github.com/dchu3/base-token-oracle
-
-## Notes for agents
-
-- All responses are deterministic JSON with stable field names — safe to parse without an LLM.
-- Paid routes are cached server-side for 30–60s per `(route, address)`; every cache hit still charges (that's the product — agents pay for *fresh enough* data without hitting upstream rate limits).
-- Replace `base-token-oracle.example.com` with the operator's actual host.
+1. **Agent-First:** Deterministic JSON, flat schemas, no conversational filler.
+2. **Atomic Costs:** Clear pay-per-call pricing. No subscriptions.
+3. **Low Latency:** Optimized for fast execution in bot loops.

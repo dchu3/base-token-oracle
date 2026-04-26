@@ -1,6 +1,6 @@
 # Production stack: oracle + Caddy (auto-TLS).
 #
-# Must be invoked from the parent directory that holds all 4 sibling repos,
+# Must be invoked from the parent directory that holds both necessary repos,
 # because the build context is `..` relative to this file.
 #
 #   cd <parent>
@@ -9,7 +9,7 @@
 #
 # Required env (via shell or base-token-oracle/.env):
 #   RECEIVING_ADDRESS, FACILITATOR_URL, DOMAIN
-# Optional: PRICE_MARKET, PRICE_HONEYPOT, PRICE_FORENSICS, PRICE_REPORT, CACHE_TTL_MS
+# Optional: PRICE_REPORT, CACHE_TTL_MS
 
 services:
   oracle:

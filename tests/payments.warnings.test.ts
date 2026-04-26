@@ -9,7 +9,7 @@ function baseConfig(overrides: Partial<PaymentConfig> = {}): PaymentConfig {
   return {
     receivingAddress: '0x2222222222222222222222222222222222222222',
     facilitatorUrl: CDP_FACILITATOR_URL,
-    prices: { market: '0.005', honeypot: '0.01', forensics: '0.02', report: '0.03' },
+    prices: { report: '0.01' },
     ...overrides,
   };
 }
