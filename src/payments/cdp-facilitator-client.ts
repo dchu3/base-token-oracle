@@ -36,6 +36,11 @@ export interface CdpFacilitatorClientConfig {
    * (500ms, 1s, 2s...). Set to 0 to disable.
    */
   rateLimitRetries?: number;
+  /**
+   * Optional logger for diagnostic messages (extension responses, missing
+   * Bazaar headers, etc.). Defaults to `console.warn`. Test seam.
+   */
+  logger?: (msg: string) => void;
 }
 
 /**
@@ -105,6 +110,7 @@ export class CdpFacilitatorClient implements FacilitatorClient {
   private readonly jwtTtlSeconds: number;
   private readonly requestTimeoutMs: number;
   private readonly rateLimitRetries: number;
+  private readonly logger: (msg: string) => void;
 
   constructor(config: CdpFacilitatorClientConfig) {
     if (!config.facilitatorUrl) {
@@ -123,6 +129,7 @@ export class CdpFacilitatorClient implements FacilitatorClient {
     this.jwtTtlSeconds = Math.max(1, config.jwtTtlSeconds ?? 120);
     this.requestTimeoutMs = Math.max(1, config.requestTimeoutMs ?? 10_000);
     this.rateLimitRetries = Math.max(0, config.rateLimitRetries ?? 3);
+    this.logger = config.logger ?? ((m) => console.warn(m));
   }
 
   /**
@@ -172,7 +179,7 @@ export class CdpFacilitatorClient implements FacilitatorClient {
     path: string,
     method: string,
     payload?: unknown,
-    opts: { retryOn429?: boolean } = {},
+    opts: { retryOn429?: boolean; logExtensionResponses?: boolean } = {},
   ): Promise<T> {
     const url = new URL(`${this.facilitatorUrl}/${path}`);
     const body = payload ? JSON.stringify(this.toJsonSafe(payload)) : '';
@@ -204,6 +211,19 @@ export class CdpFacilitatorClient implements FacilitatorClient {
           const backoffMs = 500 * 2 ** (attempt - 1);
           await new Promise((r) => setTimeout(r, backoffMs));
           continue;
+        }
+
+        if (opts.logExtensionResponses) {
+          try {
+            this.logExtensionResponses(path, response);
+          } catch (logErr) {
+            // Logging must never affect facilitator semantics.
+            this.logger(
+              `[bazaar] failed to inspect extension-responses on ${path}: ${
+                logErr instanceof Error ? logErr.message : String(logErr)
+              }`,
+            );
+          }
         }
 
         if (!response.ok) {
@@ -245,22 +265,32 @@ export class CdpFacilitatorClient implements FacilitatorClient {
     paymentPayload: PaymentPayload,
     paymentRequirements: PaymentRequirements,
   ): Promise<VerifyResponse> {
-    return this.authenticatedRequest<VerifyResponse>('verify', 'POST', {
-      x402Version: (paymentPayload as { x402Version?: number }).x402Version,
-      paymentPayload,
-      paymentRequirements,
-    });
+    return this.authenticatedRequest<VerifyResponse>(
+      'verify',
+      'POST',
+      {
+        x402Version: (paymentPayload as { x402Version?: number }).x402Version,
+        paymentPayload,
+        paymentRequirements,
+      },
+      { logExtensionResponses: true },
+    );
   }
 
   async settle(
     paymentPayload: PaymentPayload,
     paymentRequirements: PaymentRequirements,
   ): Promise<SettleResponse> {
-    return this.authenticatedRequest<SettleResponse>('settle', 'POST', {
-      x402Version: (paymentPayload as { x402Version?: number }).x402Version,
-      paymentPayload,
-      paymentRequirements,
-    });
+    return this.authenticatedRequest<SettleResponse>(
+      'settle',
+      'POST',
+      {
+        x402Version: (paymentPayload as { x402Version?: number }).x402Version,
+        paymentPayload,
+        paymentRequirements,
+      },
+      { logExtensionResponses: true },
+    );
   }
 
   async getSupported(): Promise<SupportedResponse> {
@@ -293,4 +323,82 @@ export class CdpFacilitatorClient implements FacilitatorClient {
     }
     return obj;
   }
+
+  /**
+   * Inspect the `EXTENSION-RESPONSES` header on a verify/settle response
+   * and log a one-liner summarising per-extension status (e.g.
+   * `bazaar=processing` vs `bazaar=rejected`). Per the CDP docs at
+   * https://docs.cdp.coinbase.com/x402/bazaar this is the only signal that
+   * tells the resource server whether discovery metadata was accepted.
+   *
+   * The header format is loosely specified ("JSON or comma-separated
+   * key=value"). We accept either:
+   *   - JSON object: `{"bazaar":"processing"}` or `{"bazaar":{"status":"processing"}}`
+   *   - JSON array of `{name,status}` records
+   *   - comma-separated `bazaar=processing, foo=rejected`
+   *
+   * Absence of the header on a CDP response is itself diagnostic (it means
+   * the facilitator never saw our extension declaration), so we surface a
+   * separate warning in that case.
+   */
+  private logExtensionResponses(path: string, response: Response): void {
+    const raw =
+      response.headers.get('extension-responses') ??
+      response.headers.get('EXTENSION-RESPONSES');
+    if (!raw) {
+      this.logger(
+        `[bazaar] ${path} response has no extension-responses header — facilitator did not see any extension declaration on this request.`,
+      );
+      return;
+    }
+    const summary = parseExtensionResponses(raw);
+    this.logger(`[bazaar] ${path} extension-responses: ${summary}`);
+  }
+}
+
+/**
+ * Parse the CDP `EXTENSION-RESPONSES` header into a compact log string.
+ * Exported for unit testing; tolerant of multiple shapes.
+ */
+export function parseExtensionResponses(raw: string): string {
+  const trimmed = raw.trim();
+  // Try JSON first.
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      const pairs: string[] = [];
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (item && typeof item === 'object') {
+            const rec = item as Record<string, unknown>;
+            const name = String(rec.name ?? rec.extension ?? '?');
+            const status = String(rec.status ?? rec.state ?? rec.result ?? '?');
+            pairs.push(`${name}=${status}`);
+          }
+        }
+      } else if (parsed && typeof parsed === 'object') {
+        for (const [name, value] of Object.entries(
+          parsed as Record<string, unknown>,
+        )) {
+          if (value && typeof value === 'object') {
+            const rec = value as Record<string, unknown>;
+            const status = String(rec.status ?? rec.state ?? rec.result ?? value);
+            pairs.push(`${name}=${status}`);
+          } else {
+            pairs.push(`${name}=${String(value)}`);
+          }
+        }
+      }
+      if (pairs.length > 0) return pairs.join(', ');
+    } catch {
+      // fall through to key=value parsing
+    }
+  }
+  // Comma-separated key=value form.
+  const pairs = trimmed
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (pairs.length === 0) return '(empty)';
+  return pairs.join(', ');
 }
