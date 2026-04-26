@@ -70,6 +70,31 @@ if [ "$fail" -gt 0 ]; then
   exit 1
 fi
 echo "SMOKE: OK"
+
+# Optional: probe CDP Bazaar to verify the operator's resources are indexed.
+# Non-fatal — informational only — because indexing is asynchronous and
+# requires at least one successful settlement through the CDP facilitator.
+if [ -n "${RECEIVING_ADDRESS:-}" ]; then
+  echo
+  echo "Bazaar indexing probe for payTo=${RECEIVING_ADDRESS}:"
+  bazaar_url="https://api.cdp.coinbase.com/platform/v2/x402/discovery/search?payTo=${RECEIVING_ADDRESS}&network=eip155:8453&limit=20"
+  body=$(curl -fsS --max-time 10 "$bazaar_url" || true)
+  if [ -z "$body" ]; then
+    echo "  WARN  CDP discovery search returned no body (network/auth issue?)"
+  else
+    count=$(echo "$body" | grep -o '"resource"' | wc -l | tr -d ' ')
+    if [ "$count" -gt 0 ]; then
+      echo "  OK   Bazaar lists ${count} resource(s) for this payTo"
+    else
+      echo "  WARN Bazaar lists 0 resources for this payTo."
+      echo "       Causes: no settlement yet via CDP, FACILITATOR_URL not pointing at"
+      echo "       https://api.cdp.coinbase.com/platform/v2/x402, missing CDP creds, or"
+      echo "       the bazaar extension was rejected (check server logs for"
+      echo "       '[bazaar] settle extension-responses')."
+    fi
+  fi
+fi
+
 echo
 echo "Note: the real paid flow (sign → X-PAYMENT retry → 200) is NOT covered"
 echo "here. It requires a funded Base-mainnet wallet and incurs real USDC cost."

@@ -412,18 +412,33 @@ For your deployment to be indexed you must:
 1. Use the CDP facilitator. Set `FACILITATOR_URL=https://api.cdp.coinbase.com/platform/v2/x402`.
 2. Provide CDP API credentials: `CDP_API_KEY_ID` and `CDP_API_KEY_PRIVATE_KEY` (or `CDP_API_KEY_SECRET`). Without these the server falls back to the generic `HTTPFacilitatorClient`, which is unauthenticated and **not** indexed by Bazaar.
 3. Process at least one successful **settlement** per route through CDP. Verify alone is not enough — discovery indexing runs after settle completes. The simplest bootstrap is to call each of the four paid endpoints once after deploy.
+4. If the oracle runs behind a TLS-terminating reverse proxy (Caddy, nginx, ALB, …), set `TRUST_PROXY` so Express honors `X-Forwarded-Proto`. Without it, `req.protocol` is `http` and the canonical resource URL the facilitator indexes is `http://…`, which buyers querying over HTTPS will never find. The oracle defaults to `loopback, linklocal, uniquelocal`, which is correct for the bundled docker-compose / Caddy setup; set `TRUST_PROXY=true` only if you fully control the proxy in front.
 
 **Verifying it works**
 
-- On verify/settle, the CDP facilitator returns an `EXTENSION-RESPONSES`
-  HTTP header. A value like `{"bazaar":{"status":"processing"}}` means the
-  declaration was accepted (indexing is asynchronous);
-  `{"bazaar":{"status":"success"}}` means it's live; `"rejected"` carries
-  a `rejectedReason`.
-- Once indexed, your routes appear in:
-  - `GET https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources?payTo=<RECEIVING_ADDRESS>`
-  - `GET https://api.cdp.coinbase.com/platform/v2/x402/discovery/search?query=<text>`
-  - and the public UI at https://agentic.market.
+The oracle now logs the CDP `EXTENSION-RESPONSES` header on every verify
+and settle response. After a real paid call, you should see one of:
+
+```
+[bazaar] settle extension-responses: bazaar=processing   # accepted, async indexing pending
+[bazaar] settle extension-responses: bazaar=success      # live in the catalog
+[bazaar] settle extension-responses: bazaar=rejected     # validation failed — fix discovery.ts
+[bazaar] settle response has no extension-responses header — facilitator did not see any extension declaration on this request.
+```
+
+Independently, query the public discovery endpoints:
+
+```bash
+# All resources for your operator wallet:
+curl 'https://api.cdp.coinbase.com/platform/v2/x402/discovery/search?payTo=<RECEIVING_ADDRESS>&network=eip155:8453'
+
+# Paginated catalog:
+curl 'https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources?type=http'
+```
+
+Each `resource` URL should start with `https://` and match the canonical
+route template (e.g. `…/token/:address/report`). `npm run smoke` now also
+runs this probe automatically when `RECEIVING_ADDRESS` is set.
 
 **Out of scope:** non-CDP facilitators are not indexed by Bazaar. The HEAD
 mirrors that protect the paywall do not declare discovery metadata —

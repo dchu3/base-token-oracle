@@ -82,6 +82,45 @@ export interface PaymentConfig {
   cdpPrivateKey?: string;
 }
 
+/**
+ * Canonical CDP facilitator URL. Bazaar discovery indexing only happens
+ * when verify+settle traffic flows through the CDP facilitator — generic
+ * HTTP facilitators do NOT index the catalog.
+ */
+export const CDP_FACILITATOR_URL = 'https://api.cdp.coinbase.com/platform/v2/x402';
+
+function isCdpFacilitator(url: string): boolean {
+  // Tolerate trailing slashes and casing in the host.
+  const normalized = url.trim().replace(/\/+$/, '');
+  return normalized.toLowerCase() === CDP_FACILITATOR_URL.toLowerCase();
+}
+
+/**
+ * Emit human-readable warnings when the payment configuration cannot
+ * possibly result in Bazaar indexing. Each branch is non-fatal — we still
+ * boot — but the warnings make misconfig visible from the first log line.
+ *
+ * Exported so tests can drive it directly.
+ */
+export function warnIfBazaarIndexingDisabled(
+  config: PaymentConfig,
+  log: (msg: string) => void = (m) => console.warn(m),
+): void {
+  const usingCdp = isCdpFacilitator(config.facilitatorUrl);
+  if (!usingCdp) {
+    log(
+      `[base-token-oracle] FACILITATOR_URL=${config.facilitatorUrl} is not the CDP facilitator (${CDP_FACILITATOR_URL}). Bazaar discovery indexing is performed by CDP only — your resources will NOT appear in https://api.cdp.coinbase.com/platform/v2/x402/discovery/* until you switch.`,
+    );
+    return;
+  }
+  if (!config.cdpKeyId || !config.cdpPrivateKey) {
+    log(
+      '[base-token-oracle] FACILITATOR_URL points at the CDP facilitator but CDP_API_KEY_ID and/or CDP_API_KEY_PRIVATE_KEY are not set. Verify/settle calls will fail authentication and Bazaar indexing will not happen.',
+    );
+  }
+}
+
+
 function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): PaymentConfig | null {
   const receivingAddress = env.RECEIVING_ADDRESS?.trim();
   const facilitatorUrl = env.FACILITATOR_URL?.trim();
@@ -173,6 +212,7 @@ function buildRoutes(config: PaymentConfig): RoutesConfig {
  * falls back to HTTPFacilitatorClient.
  */
 export function applyX402(app: Express, config: PaymentConfig): void {
+  warnIfBazaarIndexingDisabled(config);
   const schemes: SchemeRegistration[] = config.schemes ?? [
     { network: BASE_NETWORK, server: new ExactEvmScheme() },
   ];
