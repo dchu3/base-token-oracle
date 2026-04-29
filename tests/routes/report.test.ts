@@ -7,6 +7,7 @@ import {
 } from '../../src/routes/report.js';
 import type {
   BlockscoutAddress,
+  BlockscoutAddressTxs,
   BlockscoutHolders,
   BlockscoutToken,
 } from '../../src/mcp/blockscout.js';
@@ -29,6 +30,7 @@ function mockBlockscout(overrides: Partial<ForensicsBlockscout>): ForensicsBlock
     getToken: vi.fn(async () => ({}) as BlockscoutToken),
     getTokenHolders: vi.fn(async () => ({ items: [] }) as BlockscoutHolders),
     getAddress: vi.fn(async () => ({}) as BlockscoutAddress),
+    getAddressTransactions: vi.fn(async () => ({ items: [] }) as BlockscoutAddressTxs),
     ...overrides,
   };
 }
@@ -49,6 +51,8 @@ describe('GET /token/:address/report', () => {
       symbol: 'TST',
       decimals: '18',
       total_supply: totalSupply.toString(),
+      circulating_market_cap: '500000',
+      exchange_rate: '0.5',
       type: 'ERC-20',
       holders_count: '1500',
       // creator_address_hash lives in passthrough space on the Zod schema:
@@ -70,14 +74,35 @@ describe('GET /token/:address/report', () => {
     const deployerAddrResp: BlockscoutAddress = {
       hash: DEPLOYER,
       is_contract: false,
+      coin_balance: '1000',
+      creation_tx_hash: '0xcreatetx',
       ...({ transactions_count: 42 } as Record<string, unknown>),
     };
 
+    const tokenTxsResp: BlockscoutAddressTxs = {
+      items: [
+        { timestamp: '2026-04-29T10:00:00Z', method: 'transfer' },
+        { timestamp: '2026-04-29T09:00:00Z', method: 'approve' },
+        { timestamp: '2026-04-29T08:00:00Z', method: 'transfer' },
+      ],
+    };
+
+    const deployerTxsResp: BlockscoutAddressTxs = {
+      items: [{ timestamp: '2026-04-29T11:00:00Z', method: null }],
+    };
+
     const getAddress = vi.fn(async () => deployerAddrResp);
+    const getAddressTransactions = vi.fn(async (addr: string) => {
+      if (addr === TOKEN) return tokenTxsResp;
+      if (addr === DEPLOYER.toLowerCase()) return deployerTxsResp;
+      return { items: [] };
+    });
+
     const mock = mockBlockscout({
       getToken: vi.fn(async () => tokenResp),
       getTokenHolders: vi.fn(async () => holdersResp),
       getAddress,
+      getAddressTransactions,
     });
 
     const res = await request(makeApp(mock)).get(
@@ -92,10 +117,23 @@ describe('GET /token/:address/report', () => {
         symbol: 'TST',
         decimals: 18,
         total_supply: totalSupply.toString(),
+        circulating_market_cap: '500000',
+        exchange_rate: '0.5',
         type: 'ERC-20',
         verified: true,
       },
-      deployer: { address: DEPLOYER.toLowerCase(), is_contract: false, tx_count: 42 },
+      deployer: {
+        address: DEPLOYER.toLowerCase(),
+        is_contract: false,
+        tx_count: 42,
+        coin_balance: '1000',
+        creation_tx_hash: '0xcreatetx',
+        last_active_timestamp: '2026-04-29T11:00:00Z',
+      },
+      token_activity: {
+        last_active_timestamp: '2026-04-29T10:00:00Z',
+        recent_methods: ['transfer', 'approve'],
+      },
       holder_count: 1500,
       top10_concentration_pct: 15,
       deployer_holdings_pct: 5,

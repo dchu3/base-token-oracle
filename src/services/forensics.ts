@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type {
   BlockscoutAddress,
+  BlockscoutAddressTxs,
   BlockscoutChain,
   BlockscoutHolders,
   BlockscoutToken,
@@ -11,6 +12,10 @@ export interface ForensicsBlockscout {
   getToken(addressHash: string, chain?: BlockscoutChain): Promise<BlockscoutToken>;
   getTokenHolders(addressHash: string, chain?: BlockscoutChain): Promise<BlockscoutHolders>;
   getAddress(addressHash: string, chain?: BlockscoutChain): Promise<BlockscoutAddress>;
+  getAddressTransactions(
+    addressHash: string,
+    chain?: BlockscoutChain,
+  ): Promise<BlockscoutAddressTxs>;
 }
 
 const TokenOutSchema = z.object({
@@ -18,6 +23,8 @@ const TokenOutSchema = z.object({
   symbol: z.string().nullable(),
   decimals: z.number().int().nonnegative().nullable(),
   total_supply: z.string().nullable(),
+  circulating_market_cap: z.string().nullable(),
+  exchange_rate: z.string().nullable(),
   type: z.string().nullable(),
   verified: z.boolean().nullable(),
 });
@@ -27,6 +34,9 @@ const DeployerOutSchema = z
     address: z.string(),
     is_contract: z.boolean().nullable(),
     tx_count: z.number().int().nonnegative().nullable(),
+    coin_balance: z.string().nullable(),
+    creation_tx_hash: z.string().nullable(),
+    last_active_timestamp: z.string().nullable(),
   })
   .nullable();
 
@@ -35,6 +45,12 @@ export const ForensicsResponseSchema = z.object({
   chain: z.literal('base'),
   token: TokenOutSchema,
   deployer: DeployerOutSchema,
+  token_activity: z
+    .object({
+      last_active_timestamp: z.string().nullable(),
+      recent_methods: z.array(z.string()).nullable(),
+    })
+    .nullable(),
   holder_count: z.number().int().nonnegative().nullable(),
   top10_concentration_pct: z.number().nullable(),
   deployer_holdings_pct: z.number().nullable(),
@@ -238,17 +254,21 @@ export async function fetchForensicsSummary(
   let tokenInfo: BlockscoutToken;
   let holdersResp: BlockscoutHolders;
   let pairHoldersResp: BlockscoutHolders | null = null;
+  let tokenTxs: BlockscoutAddressTxs | null = null;
+
   try {
-    const [tokenResult, holdersResult, pairHoldersResult] = await Promise.all([
+    const [tokenResult, holdersResult, pairHoldersResult, tokenTxsResult] = await Promise.all([
       blockscout.getToken(address, 'base'),
       blockscout.getTokenHolders(address, 'base'),
       pairAddr
         ? blockscout.getTokenHolders(pairAddr, 'base').catch(() => null)
         : Promise.resolve(null),
+      blockscout.getAddressTransactions(address, 'base').catch(() => null),
     ]);
     tokenInfo = tokenResult;
     holdersResp = holdersResult;
     pairHoldersResp = pairHoldersResult;
+    tokenTxs = tokenTxsResult;
   } catch (err) {
     if (isNotFoundError(err)) throw new ForensicsHelperError('token_not_found');
     throw new ForensicsHelperError(
@@ -275,14 +295,27 @@ export async function fetchForensicsSummary(
   let deployerInfo: z.infer<typeof DeployerOutSchema> = null;
   if (creatorHash) {
     try {
-      const addr = await blockscout.getAddress(creatorHash, 'base');
+      const [addr, txs] = await Promise.all([
+        blockscout.getAddress(creatorHash, 'base'),
+        blockscout.getAddressTransactions(creatorHash, 'base').catch(() => null),
+      ]);
       deployerInfo = {
         address: creatorHash,
         is_contract: typeof addr.is_contract === 'boolean' ? addr.is_contract : null,
         tx_count: extractTxCount(addr),
+        coin_balance: addr.coin_balance ?? null,
+        creation_tx_hash: addr.creation_tx_hash ?? null,
+        last_active_timestamp: txs?.items?.[0]?.timestamp ?? null,
       };
     } catch {
-      deployerInfo = { address: creatorHash, is_contract: null, tx_count: null };
+      deployerInfo = {
+        address: creatorHash,
+        is_contract: null,
+        tx_count: null,
+        coin_balance: null,
+        creation_tx_hash: null,
+        last_active_timestamp: null,
+      };
     }
   }
 
@@ -303,6 +336,19 @@ export async function fetchForensicsSummary(
 
   const decimals = coerceInt(tokenInfo.decimals);
 
+  const tokenActivity = tokenTxs
+    ? {
+        last_active_timestamp: tokenTxs.items?.[0]?.timestamp ?? null,
+        recent_methods: Array.from(
+          new Set(
+            (tokenTxs.items ?? [])
+              .map((tx) => tx.method)
+              .filter((m): m is string => typeof m === 'string' && m.length > 0),
+          ),
+        ).slice(0, 5),
+      }
+    : null;
+
   const payload: ForensicsResponse = {
     address,
     chain: 'base',
@@ -311,10 +357,13 @@ export async function fetchForensicsSummary(
       symbol: tokenInfo.symbol ?? null,
       decimals,
       total_supply: tokenInfo.total_supply ?? null,
+      circulating_market_cap: tokenInfo.circulating_market_cap ?? null,
+      exchange_rate: tokenInfo.exchange_rate ?? null,
       type: tokenInfo.type ?? null,
       verified,
     },
     deployer: deployerInfo,
+    token_activity: tokenActivity,
     holder_count: holderCount,
     top10_concentration_pct: top10Pct,
     deployer_holdings_pct: deployerPct,
