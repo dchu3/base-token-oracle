@@ -165,28 +165,43 @@ components:
     ReportResponse:
       type: object
       required:
-        [address, chain, token, deployer, holder_count, top10_concentration_pct, deployer_holdings_pct, lp_locked_heuristic, flags]
+        [address, chain, token, deployer, token_activity, holder_count, top10_concentration_pct, deployer_holdings_pct, lp_locked_heuristic, flags]
       properties:
         address: { type: string }
         chain: { type: string, const: "base" }
         token:
           type: object
-          required: [name, symbol, decimals, total_supply, type, verified]
+          required: [name, symbol, decimals, total_supply, circulating_market_cap, exchange_rate, type, verified]
           properties:
             name: { type: string, nullable: true }
             symbol: { type: string, nullable: true }
             decimals: { type: integer, nullable: true }
             total_supply: { type: string, nullable: true }
+            circulating_market_cap: { type: string, nullable: true }
+            exchange_rate: { type: string, nullable: true }
             type: { type: string, nullable: true }
             verified: { type: boolean, nullable: true }
         deployer:
           nullable: true
           type: object
-          required: [address, is_contract, tx_count]
+          required: [address, is_contract, tx_count, coin_balance, creation_tx_hash, last_active_timestamp]
           properties:
             address: { type: string }
             is_contract: { type: boolean, nullable: true }
             tx_count: { type: integer, nullable: true }
+            coin_balance: { type: string, nullable: true }
+            creation_tx_hash: { type: string, nullable: true }
+            last_active_timestamp: { type: string, nullable: true }
+        token_activity:
+          nullable: true
+          type: object
+          required: [last_active_timestamp, recent_methods]
+          properties:
+            last_active_timestamp: { type: string, nullable: true }
+            recent_methods:
+              type: array
+              items: { type: string }
+              nullable: true
         holder_count: { type: integer, nullable: true }
         top10_concentration_pct: { type: number, nullable: true }
         deployer_holdings_pct: { type: number, nullable: true }
@@ -207,12 +222,20 @@ components:
           symbol: "WETH"
           decimals: 18
           total_supply: "140238472812345678901234"
+          circulating_market_cap: "1000000000"
+          exchange_rate: "2500.50"
           type: "ERC-20"
           verified: true
         deployer:
           address: "0x4200000000000000000000000000000000000000"
           is_contract: true
           tx_count: 12
+          coin_balance: "1000000000000000000"
+          creation_tx_hash: "0xabc123..."
+          last_active_timestamp: "2026-04-29T12:00:00Z"
+        token_activity:
+          last_active_timestamp: "2026-04-29T12:15:00Z"
+          recent_methods: ["transfer", "approve"]
         holder_count: 312104
         top10_concentration_pct: 34.12
         deployer_holdings_pct: 0

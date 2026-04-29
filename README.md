@@ -29,7 +29,7 @@ for autonomous agents that need machine-readable trust signals.
 | Route | Price (USDC) | Source | Returns |
 |---|---|---|---|
 | `GET /healthz` | free | — | `{ ok: true }` |
-| `GET /api/v1/x402/base/token/{address}/report` | **0.01** | Blockscout MCP | deployer, verified, holder count, top-10 concentration, LP-lock heuristic |
+| `GET /api/v1/x402/base/token/{address}/report` | **0.01** | Blockscout MCP | financials, deployer (balance, creation, activity), token activity, verified status, holder count, top-10 concentration, LP-lock heuristic |
 
 All paid routes settle in USDC
 (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) on Base mainnet (chainId
@@ -60,13 +60,22 @@ from your wallet, retries with `X-PAYMENT`, and prints the JSON response.
     "symbol": "WETH",
     "decimals": 18,
     "total_supply": "140238472812345678901234",
+    "circulating_market_cap": "1000000000",
+    "exchange_rate": "2500.50",
     "type": "ERC-20",
     "verified": true
   },
   "deployer": {
     "address": "0x4200000000000000000000000000000000000000",
     "is_contract": true,
-    "tx_count": 12
+    "tx_count": 12,
+    "coin_balance": "1000000000000000000",
+    "creation_tx_hash": "0xabc123...",
+    "last_active_timestamp": "2026-04-29T12:00:00Z"
+  },
+  "token_activity": {
+    "last_active_timestamp": "2026-04-29T12:15:00Z",
+    "recent_methods": ["transfer", "approve"]
   },
   "holder_count": 312104,
   "top10_concentration_pct": 34.12,

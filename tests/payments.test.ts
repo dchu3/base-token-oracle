@@ -24,6 +24,7 @@ function stubMcp(): McpManager {
     getToken: async () => stubToken(),
     getTokenHolders: async () => ({ items: [] }),
     getAddress: async () => ({ hash: VALID, is_contract: true }),
+    getAddressTransactions: async () => ({ items: [] }),
   };
   const mgr = Object.create(McpManager.prototype) as McpManager;
   Object.defineProperty(mgr, 'blockscout', { value: blockscout });
