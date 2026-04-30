@@ -209,20 +209,6 @@ function extractVerified(
   return null;
 }
 
-function buildFlags(params: {
-  top10Pct: number | null;
-  deployerPct: number | null;
-  verified: boolean | null;
-  lpLocked: boolean | null;
-}): string[] {
-  const flags: string[] = [];
-  if (params.top10Pct !== null && params.top10Pct > 70) flags.push('high_concentration');
-  if (params.deployerPct !== null && params.deployerPct > 20) flags.push('deployer_holds_large');
-  if (params.verified === false) flags.push('unverified_contract');
-  if (params.lpLocked === true) flags.push('lp_locked');
-  return flags;
-}
-
 export type ForensicsErrorCode =
   | 'no_blockscout'
   | 'token_not_found'
@@ -380,7 +366,7 @@ export async function fetchForensicsSummary(
     lp_locked_heuristic: lpLocked,
     risk_score: risk.score,
     risk_level: risk.level,
-    flags: buildFlags({ top10Pct, deployerPct, verified, lpLocked }),
+    flags: risk.flags,
   };
 
   const validated = ForensicsResponseSchema.safeParse(payload);

@@ -11,6 +11,7 @@ describe('Risk Engine', () => {
     });
     expect(res.score).toBe(0);
     expect(res.level).toBe('clean');
+    expect(res.flags).toHaveLength(0);
   });
 
   it('penalizes high concentration and unverified contracts', () => {
@@ -22,6 +23,8 @@ describe('Risk Engine', () => {
     });
     expect(res.score).toBe(3);
     expect(res.level).toBe('caution');
+    expect(res.flags).toContain('high_concentration');
+    expect(res.flags).toContain('unverified_contract');
   });
 
   it('penalizes large deployer holdings', () => {
@@ -33,6 +36,7 @@ describe('Risk Engine', () => {
     });
     expect(res.score).toBe(1);
     expect(res.level).toBe('clean');
+    expect(res.flags).toContain('deployer_holds_large');
   });
 
   it('applies LP lock mitigant', () => {
@@ -44,6 +48,7 @@ describe('Risk Engine', () => {
     });
     expect(res.score).toBe(2);
     expect(res.level).toBe('clean');
+    expect(res.flags).toContain('lp_locked');
   });
 
   it('clamps score at 0', () => {
@@ -54,12 +59,10 @@ describe('Risk Engine', () => {
       lpLocked: true, // 0 - 1 = -1 -> clamped to 0
     });
     expect(res.score).toBe(0);
+    expect(res.flags).toContain('lp_locked');
   });
 
   it('reaches risky/critical levels with multiple flags', () => {
-    // This will currently max out at 4 with current Blockscout-only logic
-    // +2 (concentration) +1 (deployer) +1 (unverified) = 4 (caution)
-    // To test risky/critical we can use the "future" fields in the test
     const res = computeRisk({
       top10ConcentrationPct: 80, // +2
       deployerHoldingsPct: 30, // +1
@@ -70,5 +73,14 @@ describe('Risk Engine', () => {
     });
     expect(res.score).toBe(10); // 2+1+1+4+2 = 10
     expect(res.level).toBe('critical');
+    expect(res.flags).toEqual(
+      expect.arrayContaining([
+        'high_concentration',
+        'deployer_holds_large',
+        'unverified_contract',
+        'honeypot_detected',
+        'high_tax',
+      ]),
+    );
   });
 });
