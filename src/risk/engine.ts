@@ -76,12 +76,12 @@ export function computeRisk(input: RiskInput): RiskResult {
   }
 
   // Liquidity (future)
-  if (input.liquidityUsd !== null && input.liquidityUsd < 10000) {
+  if (input.liquidityUsd !== undefined && input.liquidityUsd !== null && input.liquidityUsd < 10000) {
     score += 1;
   }
 
   // Pair age (future)
-  if (input.pairAgeHours !== null && input.pairAgeHours < 24) {
+  if (input.pairAgeHours !== undefined && input.pairAgeHours !== null && input.pairAgeHours < 24) {
     score += 1;
   }
 
