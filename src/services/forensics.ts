@@ -56,7 +56,7 @@ export const ForensicsResponseSchema = z.object({
   top10_concentration_pct: z.number().nullable(),
   deployer_holdings_pct: z.number().nullable(),
   lp_locked_heuristic: z.boolean().nullable(),
-  risk_score: z.number().int().min(0).max(10),
+  risk_score: z.number().min(0).max(10),
   risk_level: RiskLevelSchema,
   flags: z.array(z.string()),
 });

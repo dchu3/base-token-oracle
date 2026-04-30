@@ -23,6 +23,12 @@ export interface RiskResult {
   level: RiskLevel;
 }
 
+export const RISK_THRESHOLDS = {
+  CLEAN: 2,
+  CAUTION: 5,
+  RISKY: 8,
+};
+
 /**
  * Deterministic risk scoring engine.
  * 
@@ -43,6 +49,9 @@ export interface RiskResult {
  * - 9–10 = critical
  */
 export function computeRisk(input: RiskInput): RiskResult {
+  // Start with a base score. If all indicators are null/missing, 
+  // we treat it as 0 (clean) but logically it's "unknown". 
+  // For now we stick to the 0-10 scale.
   let score = 0;
 
   // Honeypot (future)
@@ -91,8 +100,8 @@ export function computeRisk(input: RiskInput): RiskResult {
 }
 
 function mapScoreToLevel(score: number): RiskLevel {
-  if (score <= 2) return 'clean';
-  if (score <= 5) return 'caution';
-  if (score <= 8) return 'risky';
+  if (score <= RISK_THRESHOLDS.CLEAN) return 'clean';
+  if (score <= RISK_THRESHOLDS.CAUTION) return 'caution';
+  if (score <= RISK_THRESHOLDS.RISKY) return 'risky';
   return 'critical';
 }
