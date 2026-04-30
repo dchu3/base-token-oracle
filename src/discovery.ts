@@ -159,6 +159,9 @@ function declareGetExtension(
     };
   };
   bazaar.info.input.method = 'GET';
+  (bazaar as Record<string, unknown>).discoverable = true;
+  (bazaar as Record<string, unknown>).category = 'web3';
+  (bazaar as Record<string, unknown>).tags = ['base', 'erc20', 'forensics', 'risk'];
   bazaar.schema.properties.input.properties.method = {
     type: 'string',
     enum: ['GET'],
