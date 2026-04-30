@@ -21,6 +21,7 @@ export interface RiskInput {
 export interface RiskResult {
   score: number;
   level: RiskLevel;
+  flags: string[];
 }
 
 export const RISK_THRESHOLDS = {
@@ -49,45 +50,55 @@ export const RISK_THRESHOLDS = {
  * - 9–10 = critical
  */
 export function computeRisk(input: RiskInput): RiskResult {
-  // Start with a base score. If all indicators are null/missing, 
-  // we treat it as 0 (clean) but logically it's "unknown". 
-  // For now we stick to the 0-10 scale.
   let score = 0;
+  const flags: string[] = [];
 
   // Honeypot (future)
-  if (input.isHoneypot === true) score += 4;
+  if (input.isHoneypot === true) {
+    score += 4;
+    flags.push('honeypot_detected');
+  }
 
   // Taxes (future)
-  if ((input.buyTaxPct ?? 0) > 10 || (input.sellTaxPct ?? 0) > 10) score += 2;
+  if ((input.buyTaxPct ?? 0) > 10 || (input.sellTaxPct ?? 0) > 10) {
+    score += 2;
+    flags.push('high_tax');
+  }
 
   // Concentration
   if (input.top10ConcentrationPct !== null && input.top10ConcentrationPct > 70) {
     score += 2;
+    flags.push('high_concentration');
   }
 
   // Deployer holdings
   if (input.deployerHoldingsPct !== null && input.deployerHoldingsPct > 20) {
     score += 1;
+    flags.push('deployer_holds_large');
   }
 
   // Verification
   if (input.verified === false) {
     score += 1;
+    flags.push('unverified_contract');
   }
 
   // Liquidity (future)
   if (input.liquidityUsd !== undefined && input.liquidityUsd !== null && input.liquidityUsd < 10000) {
     score += 1;
+    flags.push('low_liquidity');
   }
 
   // Pair age (future)
   if (input.pairAgeHours !== undefined && input.pairAgeHours !== null && input.pairAgeHours < 24) {
     score += 1;
+    flags.push('new_pair');
   }
 
   // LP Locked (Mitigant)
   if (input.lpLocked === true) {
     score -= 1;
+    flags.push('lp_locked');
   }
 
   // Clamp and finalize
@@ -96,6 +107,7 @@ export function computeRisk(input: RiskInput): RiskResult {
   return {
     score: finalScore,
     level: mapScoreToLevel(finalScore),
+    flags,
   };
 }
 
