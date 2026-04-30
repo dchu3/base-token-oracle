@@ -7,6 +7,7 @@ import type {
   BlockscoutToken,
 } from '../mcp/blockscout.js';
 import type { TtlLruCache } from '../cache.js';
+import { computeRisk, RiskLevelSchema } from '../risk/engine.js';
 
 export interface ForensicsBlockscout {
   getToken(addressHash: string, chain?: BlockscoutChain): Promise<BlockscoutToken>;
@@ -55,6 +56,8 @@ export const ForensicsResponseSchema = z.object({
   top10_concentration_pct: z.number().nullable(),
   deployer_holdings_pct: z.number().nullable(),
   lp_locked_heuristic: z.boolean().nullable(),
+  risk_score: z.number().min(0).max(10),
+  risk_level: RiskLevelSchema,
   flags: z.array(z.string()),
 });
 
@@ -349,6 +352,13 @@ export async function fetchForensicsSummary(
       }
     : null;
 
+  const risk = computeRisk({
+    top10ConcentrationPct: top10Pct,
+    deployerHoldingsPct: deployerPct,
+    verified,
+    lpLocked,
+  });
+
   const payload: ForensicsResponse = {
     address,
     chain: 'base',
@@ -368,6 +378,8 @@ export async function fetchForensicsSummary(
     top10_concentration_pct: top10Pct,
     deployer_holdings_pct: deployerPct,
     lp_locked_heuristic: lpLocked,
+    risk_score: risk.score,
+    risk_level: risk.level,
     flags: buildFlags({ top10Pct, deployerPct, verified, lpLocked }),
   };
 

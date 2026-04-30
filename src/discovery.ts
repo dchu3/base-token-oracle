@@ -50,6 +50,8 @@ const reportExample = {
   top10_concentration_pct: 41.2,
   deployer_holdings_pct: 0,
   lp_locked_heuristic: true,
+  risk_score: 0,
+  risk_level: 'clean' as const,
   flags: [],
 };
 
