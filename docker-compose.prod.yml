@@ -43,8 +43,19 @@ services:
       - "443:443"
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN=your.host before docker compose up}
+      # Optional: override the ACME issuer when Let's Encrypt is rate-limiting.
+      # Common values:
+      #   ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory  (untrusted staging certs, no per-domain limit)
+      #   ACME_CA=https://acme.zerossl.com/v2/DV90                         (ZeroSSL — separate quota from LE)
+      # Defaults to Let's Encrypt production (5 duplicate certs per
+      # exact-identifier set per 168h — see https://letsencrypt.org/docs/rate-limits/).
+      ACME_CA: ${ACME_CA:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # IMPORTANT: caddy_data persists ACME account keys + issued certs.
+      # Do NOT run `docker compose down -v` casually — destroying this
+      # volume forces fresh cert issuance on next start and can trip
+      # Let's Encrypt's "5 duplicate certs / 168h" rate limit.
       - caddy_data:/data
       - caddy_config:/config
 
