@@ -41,17 +41,22 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    # Use list-form `environment` so vars without an `=` are only forwarded
+    # when set on the host (or in compose's .env). `ACME_CA: ${ACME_CA:-}`
+    # would always inject an empty string, which defeats the Caddyfile
+    # `{$ACME_CA:default}` fallback and crashes Caddy with
+    # "wrong argument count … after 'acme_ca'".
     environment:
-      DOMAIN: ${DOMAIN:?set DOMAIN=your.host before docker compose up}
-      # Optional: override the ACME issuer when Let's Encrypt is rate-limiting.
+      - DOMAIN=${DOMAIN:?set DOMAIN=your.host before docker compose up}
+      # Optional ACME issuer override. Forwarded only when set on the host.
       # Common values:
       #   ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory  (LE staging — UNTRUSTED, no per-domain limit)
       # NOTE: ZeroSSL via plain ACME needs EAB credentials — use Caddy's
       # `zerossl` issuer module (configured in the Caddyfile) instead of
       # pointing acme_ca at the ZeroSSL ACME URL.
-      # Defaults to Let's Encrypt production (5 duplicate certs per
+      # Unset to use Let's Encrypt production (5 duplicate certs per
       # exact-identifier set per 168h — see https://letsencrypt.org/docs/rate-limits/).
-      ACME_CA: ${ACME_CA:-}
+      - ACME_CA
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # IMPORTANT: caddy_data persists ACME account keys + issued certs.
