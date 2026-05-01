@@ -1,6 +1,6 @@
 # base-token-oracle
 
-> x402-gated Base token forensics for agents: on-chain metadata, holder distribution, and security heuristics fused into a single deterministic paid call — purpose-built for autonomous trading bots.
+> x402-gated Base token forensics for agents: on-chain metadata and holder distribution surfaced through a single deterministic paid call — purpose-built for autonomous trading bots.
 
 Aggregates Blockscout data behind a pay-per-call HTTP surface. Every paid route is settled in USDC on Base via the x402 protocol.
 

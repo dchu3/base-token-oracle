@@ -138,8 +138,6 @@ describe('GET /token/:address/report', () => {
       top10_concentration_pct: 15,
       deployer_holdings_pct: 5,
       lp_locked_heuristic: null,
-      risk_score: 0,
-      risk_level: 'clean',
       flags: [],
     });
     expect(getAddress).toHaveBeenCalledWith(DEPLOYER.toLowerCase(), 'base');
@@ -202,8 +200,6 @@ describe('GET /token/:address/report', () => {
     expect(res.status).toBe(200);
     expect(res.body.top10_concentration_pct).toBe(80);
     expect(res.body.deployer_holdings_pct).toBe(80);
-    expect(res.body.risk_score).toBe(4);
-    expect(res.body.risk_level).toBe('caution');
     expect(res.body.flags).toEqual(
       expect.arrayContaining(['high_concentration', 'deployer_holds_large', 'unverified_contract']),
     );
