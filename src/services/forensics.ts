@@ -7,7 +7,7 @@ import type {
   BlockscoutToken,
 } from '../mcp/blockscout.js';
 import type { TtlLruCache } from '../cache.js';
-import { computeRisk, RiskLevelSchema } from '../risk/engine.js';
+import { computeRisk, RiskConfidenceSchema, RiskLevelSchema } from '../risk/engine.js';
 
 export interface ForensicsBlockscout {
   getToken(addressHash: string, chain?: BlockscoutChain): Promise<BlockscoutToken>;
@@ -59,6 +59,26 @@ export const ForensicsResponseSchema = z.object({
   risk_score: z.number().min(0).max(10),
   risk_level: RiskLevelSchema,
   flags: z.array(z.string()),
+  risk_components: z
+    .array(
+      z.object({
+        id: z.string(),
+        points: z.number(),
+        flag: z.string(),
+        detail: z.string(),
+        is_mitigant: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+  risk_mitigants: z.array(z.string()).optional(),
+  risk_coverage: z
+    .object({
+      evaluated: z.number().int().nonnegative(),
+      total: z.number().int().nonnegative(),
+      missing: z.array(z.string()),
+    })
+    .optional(),
+  risk_confidence: RiskConfidenceSchema.optional(),
 });
 
 export type ForensicsResponse = z.infer<typeof ForensicsResponseSchema>;
@@ -367,6 +387,16 @@ export async function fetchForensicsSummary(
     risk_score: risk.score,
     risk_level: risk.level,
     flags: risk.flags,
+    risk_components: risk.components.map((c) => ({
+      id: c.id,
+      points: c.points,
+      flag: c.flag,
+      detail: c.detail,
+      ...(c.isMitigant ? { is_mitigant: true } : {}),
+    })),
+    risk_mitigants: risk.mitigants,
+    risk_coverage: risk.coverage,
+    risk_confidence: risk.confidence,
   };
 
   const validated = ForensicsResponseSchema.safeParse(payload);

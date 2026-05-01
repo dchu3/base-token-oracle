@@ -81,14 +81,49 @@ from your wallet, retries with `X-PAYMENT`, and prints the JSON response.
   "top10_concentration_pct": 34.12,
   "deployer_holdings_pct": 0,
   "lp_locked_heuristic": null,
-  "flags": []
+  "risk_score": 0,
+  "risk_level": "clean",
+  "flags": [],
+  "risk_components": [],
+  "risk_mitigants": [],
+  "risk_coverage": { "evaluated": 4, "total": 8, "missing": ["honeypot_detected", "high_tax", "low_liquidity", "new_pair"] },
+  "risk_confidence": "medium"
 }
 ```
 
 `lp_locked_heuristic` is `null` unless the caller supplies `?pair=0x…`. When
 supplied, it is `true` when a dead/zero address appears in the top-5 holders of
-the LP token. Possible `flags`: `high_concentration`, `deployer_holds_large`,
-`unverified_contract`, `lp_locked`.
+the LP token.
+
+### Risk scoring
+
+The deterministic risk engine evaluates eight rules and produces an integer
+`risk_score` (0–10), a `risk_level`, and itemized `risk_components`.
+
+| Rule | id | Trigger | Points |
+|---|---|---|---|
+| Honeypot detected | `honeypot_detected` | `true` | +4 |
+| High tax (max of buy/sell) | `high_tax` | `> 10%` | +2 |
+| Top-10 holder concentration | `high_concentration` | `> 70%` | +2 |
+| Deployer holdings | `deployer_holds_large` | `> 20%` | +1 |
+| Unverified contract | `unverified_contract` | `verified === false` | +1 |
+| Low liquidity | `low_liquidity` | `< $10k` | +1 |
+| New pair | `new_pair` | `< 24h` | +1 |
+| LP locked (mitigant) | `lp_locked` | dead/burn holds LP | -1 |
+
+Points sum across rules and are clamped to 0–10. Level mapping:
+`0–2 = clean`, `3–5 = caution`, `6–8 = risky`, `9–10 = critical`.
+
+The honeypot, tax, liquidity, and pair-age rules are populated only when their
+upstream MCPs (Honeypot.is, DexScreener) are wired in; until then their inputs
+are `undefined` and the rules report as `missing` in `risk_coverage`.
+
+`risk_components` itemizes each contributing rule with its points and a human
+detail (e.g., `top-10 hold 82.4%`). `risk_mitigants` mirrors the subset of
+flags that reduce risk (currently just `lp_locked`); the original `flags`
+array still contains them too for backwards compatibility. `risk_coverage`
+reports how many rules had data, and `risk_confidence` is derived from that
+ratio (`high` ≥ 75%, `medium` ≥ 50%, else `low`).
 
 ## 6. Self-hosting
 
