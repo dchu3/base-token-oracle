@@ -49,7 +49,7 @@ const reportExample = {
   holder_count: 198_000,
   top10_concentration_pct: 41.2,
   deployer_holdings_pct: 0,
-  lp_locked_heuristic: true,
+  lp_locked_heuristic: null,
   flags: [],
 };
 
