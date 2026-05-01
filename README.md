@@ -156,6 +156,29 @@ MCP_BLOCKSCOUT_CMD=node /path/to/dex-blockscout-mcp/dist/server.js
 CACHE_TTL_MS=45000
 ```
 
+### TLS / Let's Encrypt rate limits
+
+The `docker-compose.prod.yml` Caddy service obtains certificates via ACME and
+persists ACME account keys plus issued certs in the **`caddy_data`** named
+volume. Two pitfalls to avoid:
+
+1. **Don't run `docker compose down -v`** unless you intend to throw the
+   certs away. Each fresh issuance counts against Let's Encrypt's
+   "5 duplicate certificates per exact identifier set per 168 h"
+   [rate limit](https://letsencrypt.org/docs/rate-limits/), and once you
+   trip it you're locked out for up to 7 days.
+
+2. **If you've already hit the limit**, set `ACME_CA` in your env to switch
+   issuers without waiting:
+
+   ```dotenv
+   # Untrusted but unlimited — fine for kicking the tyres:
+   ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
+
+   # ZeroSSL has a separate quota from Let's Encrypt:
+   ACME_CA=https://acme.zerossl.com/v2/DV90
+   ```
+
 ## 7. Architecture
 
 ```

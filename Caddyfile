@@ -1,3 +1,12 @@
+{
+    # Optional ACME issuer override. Defaults to Let's Encrypt production.
+    # Useful values when LE is rate-limiting:
+    #   https://acme-staging-v02.api.letsencrypt.org/directory   (LE staging — untrusted certs, unlimited)
+    #   https://acme.zerossl.com/v2/DV90                         (ZeroSSL prod — separate quota)
+    # Set via `ACME_CA=...` in the env consumed by the caddy service.
+    acme_ca {$ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
+}
+
 {$DOMAIN:localhost} {
     encode zstd gzip
 
