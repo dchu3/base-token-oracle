@@ -20,7 +20,7 @@ npm start              # node --env-file-if-exists=.env dist/server.js (port def
 **Testing:**
 ```bash
 npm test               # Run all vitest tests (tests/**/*.test.ts)
-npm test -- <pattern> # Run specific test file, e.g., npm test -- risk/engine.test.ts
+npm test -- <pattern> # Run specific test file, e.g., npm test -- services/flags.test.ts
 npm test -- --watch   # Watch mode for test development
 ```
 
@@ -36,7 +36,7 @@ ORACLE_URL=https://example.com npm run smoke  # Runs /healthz, /llms.txt, and 40
 
 ## High-Level Architecture
 
-**Purpose:** x402-gated HTTP service that aggregates token safety intelligence from three upstream MCPs (DexScreener, Honeypot.is, Blockscout) into a composite risk score.
+**Purpose:** x402-gated HTTP service that surfaces Base token forensics from the Blockscout MCP into a deterministic JSON report.
 
 **Request Flow:**
 1. Agent calls `GET /api/v1/x402/base/token/{address}/report` (or other endpoint)
@@ -44,7 +44,7 @@ ORACLE_URL=https://example.com npm run smoke  # Runs /healthz, /llms.txt, and 40
 3. Agent signs USDC `transferWithAuthorization` on Base mainnet, retries with `X-PAYMENT` header
 4. Facilitator validates payment signature
 5. Orchestrator (`TokenOracle` service) fan-outs to 3 MCP clients in parallel
-6. Results are normalized, scored by deterministic RiskEngine, cached, and returned
+6. Results are normalized, cached, and returned
 
 **Core Layers:**
 
@@ -55,7 +55,7 @@ ORACLE_URL=https://example.com npm run smoke  # Runs /healthz, /llms.txt, and 40
 | **Services** | `src/services/*.ts` | Normalize upstream responses into canonical schemas (`MarketResponse`, `NormalizedHoneypot`, `ForensicsResponse`) |
 | **MCP Client** | `src/mcp/client.ts` | Spawn and manage stdio subprocesses; each MCP is a `McpClient` instance |
 | **MCP Handlers** | `src/mcp/{dexScreener,honeypot,blockscout}.ts` | Tool call handlers — parse raw MCP responses and map to internal types |
-| **Risk Engine** | `src/risk/engine.ts` | Deterministic rule-based scoring (no LLM); always same input → same score |
+| **Flags** | `src/services/flags.ts` | Pure helper that emits descriptive attribute tags (e.g., `high_concentration`) from Blockscout-derived inputs. No scoring. |
 | **Cache** | `src/cache.ts` | TTL-based LRU cache per (route, address) pair |
 | **Payments** | `src/payments.ts` | x402 v2 middleware; RECEIVING_ADDRESS and FACILITATOR_URL from env |
 
@@ -86,32 +86,28 @@ ORACLE_URL=https://example.com npm run smoke  # Runs /healthz, /llms.txt, and 40
   - Zod schema for validation (e.g., `MarketResponseSchema`)
 - Services are composable — `src/routes/report.ts` calls all three cached fetchers in parallel
 
-### Risk Engine Rules
-Deterministic single-threshold rules; integer score 0–10 (clamped):
-- `+4` if honeypot detected
-- `+2` if max(buy,sell) tax > 10%
-- `+2` if top-10 holder concentration > 70%
-- `+1` if deployer holds > 20%
-- `+1` if contract is unverified
-- `+1` if liquidity < $10k
-- `+1` if pair age < 24h
-- `-1` if LP is locked (mitigant)
+### Flags
+The forensics service emits a `flags: string[]` array with descriptive
+attribute tags derived directly from Blockscout data. There is no
+scoring, no level, and no aggregation — flags are factual descriptors and
+consumers decide what (if anything) each means.
 
-Level mapping: `0–2` = clean, `3–5` = caution, `6–8` = risky, `9–10` = critical.
+| Flag | Trigger |
+|---|---|
+| `high_concentration` | top-10 holder concentration > 70% |
+| `deployer_holds_large` | deployer holdings > 20% |
+| `unverified_contract` | `token.verified === false` |
+| `lp_locked` | dead/burn address in top-5 LP holders (requires `?pair=`) |
 
-Honeypot, tax, liquidity, and pair-age inputs are populated only when their
-upstream MCPs are wired in; until then those rules report as `missing` in
-`risk_coverage`. The result also exposes `risk_components` (itemized
-contributions with detail strings), `risk_mitigants`, `risk_coverage`
-{evaluated,total,missing}, and `risk_confidence` (`high`/`medium`/`low` based
-on coverage ratio). See `src/risk/engine.ts` for implementation.
+A flag is omitted whenever its source field is `null`. See
+`src/services/flags.ts` for the implementation.
 
 ### MCP Client Management
 - All MCPs are stdio subprocesses spawned once at startup
 - Managed by `McpManager` singleton created in `src/mcp/index.ts`
-- Each MCP (`dexScreener`, `honeypot`, `blockscout`) is optional — routes only register if MCP is available
+- Each MCP (`blockscout`) is optional — routes only register if MCP is available
 - Tool call handlers return typed results that are then passed to services for normalization
-- Errors in one MCP don't poison cache or break other requests — `/report` computes risk from sections that succeeded
+- Errors in one MCP don't poison cache or break other requests
 
 ### Parallel Request Handling
 - Routes use `Promise.all()` to fan-out to multiple services where applicable
@@ -191,15 +187,11 @@ src/
 ├── server.ts                # App factory & main entry point
 ├── payments.ts              # x402 v2 middleware
 ├── cache.ts                 # TTL-LRU cache
-├── routes/                  # HTTP handlers (market, honeypot, forensics, report)
-├── services/                # Normalization + caching (market, honeypot, forensics)
+├── routes/                  # HTTP handlers (report)
+├── services/                # Normalization + caching (forensics, flags)
 ├── mcp/
 │   ├── index.ts             # McpManager singleton factory
 │   ├── client.ts            # Generic MCP stdio client
-│   ├── dexScreener.ts       # DexScreener tool handlers
-│   ├── honeypot.ts          # Honeypot.is tool handlers
 │   ├── blockscout.ts        # Blockscout tool handlers
 │   └── shared.ts            # MCP type definitions
-└── risk/
-    └── engine.ts            # Deterministic risk scoring
 ```

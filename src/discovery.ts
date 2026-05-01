@@ -49,17 +49,16 @@ const reportExample = {
   holder_count: 198_000,
   top10_concentration_pct: 41.2,
   deployer_holdings_pct: 0,
-  lp_locked_heuristic: true,
-  risk_score: 0,
-  risk_level: 'clean' as const,
+  lp_locked_heuristic: null,
   flags: [],
 };
 
 export const reportDescription =
-  'On-chain forensics and security report for a Base ERC-20 sourced from Blockscout: ' +
+  'On-chain forensics for a Base ERC-20 sourced from Blockscout: ' +
   'token metadata (name, symbol, decimals, total supply, financials, verified status), ' +
   'deployer profile (balance, creation, activity), token activity metrics, holder count, ' +
-  'top-10 holder concentration, deployer holdings, and an LP-lock heuristic. ' +
+  'top-10 holder concentration, deployer holdings, an LP-lock heuristic, and ' +
+  'descriptive attribute flags. ' +
   'Address is supplied via the `:address` path parameter. Pay-per-call via x402 / USDC on Base.';
 
 /**
@@ -84,7 +83,7 @@ function declareGetExtension(
   bazaar.info.input.method = 'GET';
   (bazaar as Record<string, unknown>).discoverable = true;
   (bazaar as Record<string, unknown>).category = 'web3';
-  (bazaar as Record<string, unknown>).tags = ['base', 'erc20', 'forensics', 'risk'];
+  (bazaar as Record<string, unknown>).tags = ['base', 'erc20', 'forensics'];
   bazaar.schema.properties.input.properties.method = {
     type: 'string',
     enum: ['GET'],
