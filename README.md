@@ -79,6 +79,15 @@ from your wallet, retries with `X-PAYMENT`, and prints the JSON response.
   },
   "holder_count": 312104,
   "top10_concentration_pct": 34.12,
+  "circulating_top10_concentration_pct": 28.4,
+  "top_holders": [
+    {
+      "address": "0x4200000000000000000000000000000000000010",
+      "value": "12000000000000000000000",
+      "percent": 12.0,
+      "category": "bridge"
+    }
+  ],
   "deployer_holdings_pct": 0,
   "lp_locked_heuristic": null,
   "flags": []
@@ -98,13 +107,34 @@ means for their use case.
 
 | Flag | Trigger |
 |---|---|
-| `high_concentration` | `top10_concentration_pct > 70` |
+| `high_concentration` | `circulating_top10_concentration_pct > 70` (falls back to `top10_concentration_pct` when the adjusted value can't be computed) |
 | `deployer_holds_large` | `deployer_holdings_pct > 20` |
 | `unverified_contract` | `token.verified === false` |
 | `lp_locked` | dead/burn address in top-5 LP holders (requires `?pair=`) |
 
 A flag is omitted whenever its source field is `null` (e.g., `lp_locked` is
 only emitted when `?pair=` is supplied and the heuristic returns `true`).
+
+### Top-holder categories
+
+`top_holders[].category` annotates each of the (up-to) ten largest holders so
+consumers can tell raw concentration apart from circulating-supply
+concentration:
+
+| Category | Meaning |
+|---|---|
+| `burn` | Known dead/burn sink (`0x0…0`, `0x…dead`). Excluded from circulating. |
+| `bridge` | Canonical Base bridge or major cross-chain messaging contract. Excluded from circulating. |
+| `deployer` | Matches `deployer.address`. |
+| `contract` | Any other contract — LP pools, vaults, multisigs, routers. Counted as circulating. |
+| `eoa` | Externally-owned account. |
+| `unknown` | Blockscout lookup failed; no `is_contract` signal. |
+
+`circulating_top10_concentration_pct` divides the top-10 sum (excluding
+burn + bridge) by `total_supply − burn − bridge`, so a token whose float
+sits in a Uniswap pool or the Base canonical bridge isn't misflagged as
+"high concentration" purely due to non-recoverable or non-circulating
+balances.
 
 ## 6. Self-hosting
 

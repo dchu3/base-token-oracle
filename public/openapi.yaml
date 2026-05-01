@@ -165,7 +165,7 @@ components:
     ReportResponse:
       type: object
       required:
-        [address, chain, token, deployer, token_activity, holder_count, top10_concentration_pct, deployer_holdings_pct, lp_locked_heuristic, flags]
+        [address, chain, token, deployer, token_activity, holder_count, top10_concentration_pct, circulating_top10_concentration_pct, top_holders, deployer_holdings_pct, lp_locked_heuristic, flags]
       properties:
         address: { type: string }
         chain: { type: string, const: "base" }
@@ -204,6 +204,19 @@ components:
               nullable: true
         holder_count: { type: integer, nullable: true }
         top10_concentration_pct: { type: number, nullable: true }
+        circulating_top10_concentration_pct: { type: number, nullable: true }
+        top_holders:
+          type: array
+          items:
+            type: object
+            required: [address, value, percent, category]
+            properties:
+              address: { type: string }
+              value: { type: string, nullable: true }
+              percent: { type: number, nullable: true }
+              category:
+                type: string
+                enum: [burn, bridge, deployer, contract, eoa, unknown]
         deployer_holdings_pct: { type: number, nullable: true }
         lp_locked_heuristic: { type: boolean, nullable: true }
         flags:
@@ -238,6 +251,12 @@ components:
           recent_methods: ["transfer", "approve"]
         holder_count: 312104
         top10_concentration_pct: 34.12
+        circulating_top10_concentration_pct: 28.4
+        top_holders:
+          - address: "0x4200000000000000000000000000000000000010"
+            value: "12000000000000000000000"
+            percent: 12.0
+            category: bridge
         deployer_holdings_pct: 0
         lp_locked_heuristic: null
         flags: []
