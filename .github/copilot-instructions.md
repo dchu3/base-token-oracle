@@ -87,16 +87,24 @@ ORACLE_URL=https://example.com npm run smoke  # Runs /healthz, /llms.txt, and 40
 - Services are composable — `src/routes/report.ts` calls all three cached fetchers in parallel
 
 ### Risk Engine Rules
-Deterministic score (clamped to 0–10):
+Deterministic single-threshold rules; integer score 0–10 (clamped):
 - `+4` if honeypot detected
-- `+2` if buy/sell tax > 10%
+- `+2` if max(buy,sell) tax > 10%
 - `+2` if top-10 holder concentration > 70%
 - `+1` if deployer holds > 20%
+- `+1` if contract is unverified
 - `+1` if liquidity < $10k
-- `+1` if pair < 24 hours old
-- `-1` if LP is locked (reduces risk)
+- `+1` if pair age < 24h
+- `-1` if LP is locked (mitigant)
 
-Level mapping: `0–2` = clean, `3–5` = caution, `6–8` = risky, `9–10` = critical. See `src/risk/engine.ts` for implementation.
+Level mapping: `0–2` = clean, `3–5` = caution, `6–8` = risky, `9–10` = critical.
+
+Honeypot, tax, liquidity, and pair-age inputs are populated only when their
+upstream MCPs are wired in; until then those rules report as `missing` in
+`risk_coverage`. The result also exposes `risk_components` (itemized
+contributions with detail strings), `risk_mitigants`, `risk_coverage`
+{evaluated,total,missing}, and `risk_confidence` (`high`/`medium`/`low` based
+on coverage ratio). See `src/risk/engine.ts` for implementation.
 
 ### MCP Client Management
 - All MCPs are stdio subprocesses spawned once at startup
