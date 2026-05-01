@@ -43,9 +43,6 @@ export const BURN_ADDRESSES = new Set<string>([
 export const BRIDGE_ADDRESSES = new Set<string>([
   // Base canonical L1<->L2 bridge (L2StandardBridge predeploy)
   '0x4200000000000000000000000000000000000010',
-  // OptimismPortal proxy on L1 occasionally appears in holder lists for
-  // tokens that were originally deployed on L1 and bridged to Base.
-  '0x49048044d57e1c92a77f79988d21fa8faf74e97e',
   // LayerZero Endpoint v2 on Base
   '0x1a44076050125825900e736c501f859c50fe728c',
   // Wormhole TokenBridge on Base

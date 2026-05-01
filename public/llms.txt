@@ -6,7 +6,7 @@ Aggregates Blockscout data behind a pay-per-call HTTP surface. Every paid route 
 
 ## Paid Endpoints
 
-- [Token Report](https://base-token-oracle.example.com/api/v1/x402/base/token/{address}/report): On-chain forensics for any Base ERC-20: name, symbol, supply, financials (market cap, exchange rate), verified status, deployer profile (balance, creation, activity), token activity metrics, holder count, top-10 concentration, and LP-lock heuristic. $0.01 USDC per call.
+- [Token Report](https://base-token-oracle.example.com/api/v1/x402/base/token/{address}/report): On-chain forensics for any Base ERC-20: name, symbol, supply, financials (market cap, exchange rate), verified status, deployer profile (balance, creation, activity), token activity metrics, holder count, raw and circulating-supply-adjusted top-10 concentration, per-holder breakdown with category tags (burn / bridge / deployer / contract / eoa), and an LP-lock heuristic. $0.01 USDC per call.
 
 ## Design Principles
 

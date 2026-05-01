@@ -360,44 +360,34 @@ export async function fetchForensicsSummary(
 
   const circulatingTop10Pct = (() => {
     if (!totalSupply || totalSupply <= 0n) return null;
-    if (topHolders.length === 0) return null;
+
+    // Classify every holder using only address-based signals (burn + bridge
+    // are identifiable from address alone — no extra getAddress calls).
+    // This lets us compute the *true* top-10 of the circulating set even
+    // when burn/bridge holders occupy raw top-10 slots.
+    const holdersWithAddrCategory = holders
+      .filter((h): h is { address: string; value: bigint } => h.address !== null && h.value !== null)
+      .map((h) => ({
+        address: h.address,
+        value: h.value,
+        category: classifyHolder(h.address, null, creatorHash),
+      }));
+
     let nonCirculating = 0n;
-    for (const h of topHolders) {
+    for (const h of holdersWithAddrCategory) {
       if (NON_CIRCULATING_CATEGORIES.has(h.category)) {
-        try {
-          nonCirculating += BigInt(h.value ?? '0');
-        } catch {
-          /* skip malformed value */
-        }
-      }
-    }
-    // Also subtract burn/bridge holders that fall *outside* top-10 from the
-    // denominator when they appear in the wider holder list — otherwise the
-    // adjusted figure is still skewed by, e.g., a large burn balance ranked
-    // 11th. This is a best-effort pass; we only have what Blockscout
-    // returned in `holders`.
-    for (const h of holders) {
-      if (h.address === null || h.value === null) continue;
-      if (topHolders.some((t) => t.address === h.address)) continue;
-      const a = h.address;
-      // Re-classify without an `is_contract` lookup: only burn + bridge are
-      // identifiable from address alone, which is exactly what we need.
-      const cat = classifyHolder(a, null, creatorHash);
-      if (NON_CIRCULATING_CATEGORIES.has(cat)) {
         nonCirculating += h.value;
       }
     }
     const denominator = totalSupply - nonCirculating;
     if (denominator <= 0n) return null;
-    const circulatingTop10Sum = topHolders
+
+    const circulatingTop10Sum = holdersWithAddrCategory
       .filter((h) => !NON_CIRCULATING_CATEGORIES.has(h.category))
-      .reduce<bigint>((acc, h) => {
-        try {
-          return acc + BigInt(h.value ?? '0');
-        } catch {
-          return acc;
-        }
-      }, 0n);
+      .sort((a, b) => (a.value > b.value ? -1 : a.value < b.value ? 1 : 0))
+      .slice(0, 10)
+      .reduce<bigint>((acc, h) => acc + h.value, 0n);
+
     return percentBigInt(circulatingTop10Sum, denominator);
   })();
 

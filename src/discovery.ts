@@ -72,9 +72,11 @@ export const reportDescription =
   'On-chain forensics for a Base ERC-20 sourced from Blockscout: ' +
   'token metadata (name, symbol, decimals, total supply, financials, verified status), ' +
   'deployer profile (balance, creation, activity), token activity metrics, holder count, ' +
-  'top-10 holder concentration, deployer holdings, an LP-lock heuristic, and ' +
-  'descriptive attribute flags. ' +
-  'Address is supplied via the `:address` path parameter. Pay-per-call via x402 / USDC on Base.';
+  'raw and circulating-supply-adjusted top-10 holder concentration, a per-holder ' +
+  'breakdown of the top 10 with category tags (burn / bridge / deployer / contract / ' +
+  'eoa / unknown), deployer holdings, an LP-lock heuristic, and descriptive attribute ' +
+  'flags. Address is supplied via the `:address` path parameter. Pay-per-call via ' +
+  'x402 / USDC on Base.';
 
 /**
  * Wrapper around `declareDiscoveryExtension` that pre-injects the HTTP

@@ -378,5 +378,88 @@ describe('GET /token/:address/report', () => {
     expect(res.status).toBe(200);
     expect(res.body.top_holders[0].category).toBe('unknown');
   });
+
+  it('circulating top-10 backfills past burn/bridge slots in the raw top-10', async () => {
+    // Regression for: when burn/bridge fill raw-top-10 slots, the circulating
+    // numerator was previously "raw top-10 minus burn/bridge" — losing those
+    // slots entirely instead of backfilling with the next-largest circulating
+    // holders. With 12 EOAs of equal balance the true circulating top-10 must
+    // include 10 of them (not 8).
+    const totalSupply = 1_000n;
+    const BURN = '0x000000000000000000000000000000000000dEaD';
+    const BRIDGE = '0x4200000000000000000000000000000000000010';
+    const eoas = Array.from({ length: 12 }, (_, i) =>
+      `0x${(i + 100).toString(16).padStart(40, '0')}`,
+    );
+    const tokenResp: BlockscoutToken = {
+      name: 'Backfill',
+      symbol: 'BF',
+      decimals: 18,
+      total_supply: totalSupply.toString(),
+      type: 'ERC-20',
+    };
+    // Raw top-10 by value: BRIDGE(500), BURN(200), then 8 EOAs of 25 each.
+    // Two more EOAs of 25 sit at ranks 11-12.
+    const holdersResp: BlockscoutHolders = {
+      items: [
+        { address: { hash: BRIDGE }, value: '500' },
+        { address: { hash: BURN }, value: '200' },
+        ...eoas.map((a) => ({ address: { hash: a }, value: '25' })),
+      ],
+    };
+    const mock = mockBlockscout({
+      getToken: vi.fn(async () => tokenResp),
+      getTokenHolders: vi.fn(async () => holdersResp),
+      getAddress: vi.fn(async () => ({ is_contract: false }) as BlockscoutAddress),
+    });
+
+    const res = await request(makeApp(mock)).get(
+      `/api/v1/x402/base/token/${TOKEN}/report`,
+    );
+    expect(res.status).toBe(200);
+    // Circulating denominator = 1000 - 700 = 300. Top-10 of circulating
+    // holders = 10 EOAs × 25 = 250. 250 / 300 ≈ 83.33%.
+    expect(res.body.circulating_top10_concentration_pct).toBeCloseTo(83.33, 1);
+    expect(res.body.flags).toContain('high_concentration');
+  });
+
+  it('falls back to raw top10 for high_concentration when circulating denominator is non-positive', async () => {
+    // When burn + bridge balances reported by Blockscout meet or exceed
+    // total_supply (rebase tokens, upstream inconsistency), the circulating
+    // figure is null but the raw figure must still drive the flag so a
+    // genuinely concentrated token isn't silently cleared.
+    const totalSupply = 1_000n;
+    const BURN = '0x000000000000000000000000000000000000dEaD';
+    const tokenResp: BlockscoutToken = {
+      name: 'Inconsistent',
+      symbol: 'INC',
+      decimals: 18,
+      total_supply: totalSupply.toString(),
+      type: 'ERC-20',
+    };
+    // Raw top-10 sums to 1500 (>total_supply): 80% raw concentration is
+    // simulated by a single whale holding 800 plus a burn holder reported
+    // at 1100 (data inconsistency). Burn alone exceeds total_supply ⇒
+    // denominator <= 0 ⇒ circulating is null.
+    const holdersResp: BlockscoutHolders = {
+      items: [
+        { address: { hash: WHALE }, value: '800' },
+        { address: { hash: BURN }, value: '1100' },
+      ],
+    };
+    const mock = mockBlockscout({
+      getToken: vi.fn(async () => tokenResp),
+      getTokenHolders: vi.fn(async () => holdersResp),
+      getAddress: vi.fn(async () => ({ is_contract: false }) as BlockscoutAddress),
+    });
+
+    const res = await request(makeApp(mock)).get(
+      `/api/v1/x402/base/token/${TOKEN}/report`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.circulating_top10_concentration_pct).toBeNull();
+    expect(res.body.top10_concentration_pct).toBeGreaterThan(70);
+    expect(res.body.flags).toContain('high_concentration');
+  });
 });
 
