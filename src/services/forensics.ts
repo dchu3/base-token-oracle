@@ -8,6 +8,12 @@ import type {
 } from '../mcp/blockscout.js';
 import type { TtlLruCache } from '../cache.js';
 import { computeFlags, FlagSchema } from './flags.js';
+import {
+  HOLDER_CATEGORIES,
+  NON_CIRCULATING_CATEGORIES,
+  classifyHolder,
+  type HolderCategory,
+} from './holderTags.js';
 
 export interface ForensicsBlockscout {
   getToken(addressHash: string, chain?: BlockscoutChain): Promise<BlockscoutToken>;
@@ -41,6 +47,15 @@ const DeployerOutSchema = z
   })
   .nullable();
 
+const TopHolderSchema = z.object({
+  address: z.string(),
+  value: z.string().nullable(),
+  percent: z.number().nullable(),
+  category: z.enum(HOLDER_CATEGORIES),
+});
+
+export type TopHolder = z.infer<typeof TopHolderSchema>;
+
 export const ForensicsResponseSchema = z.object({
   address: z.string(),
   chain: z.literal('base'),
@@ -54,6 +69,8 @@ export const ForensicsResponseSchema = z.object({
     .nullable(),
   holder_count: z.number().int().nonnegative().nullable(),
   top10_concentration_pct: z.number().nullable(),
+  circulating_top10_concentration_pct: z.number().nullable(),
+  top_holders: z.array(TopHolderSchema),
   deployer_holdings_pct: z.number().nullable(),
   lp_locked_heuristic: z.boolean().nullable(),
   flags: z.array(FlagSchema),
@@ -313,6 +330,77 @@ export async function fetchForensicsSummary(
   const lpLocked = lpLockedFromPairHolders(pairHoldersResp);
   const verified = extractVerified(tokenInfo, contractAddrInfo);
 
+  // Pull the top-10 holders (by value) and classify each so consumers can
+  // tell raw concentration apart from circulating-supply concentration.
+  const top10Holders = holders
+    .filter((h): h is { address: string; value: bigint } => h.address !== null && h.value !== null)
+    .sort((a, b) => (a.value > b.value ? -1 : a.value < b.value ? 1 : 0))
+    .slice(0, 10);
+
+  const top10Lookups = await Promise.all(
+    top10Holders.map(async (h) => {
+      try {
+        const info = await blockscout.getAddress(h.address, 'base');
+        return typeof info.is_contract === 'boolean' ? info.is_contract : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  const topHolders: TopHolder[] = top10Holders.map((h, i) => {
+    const category: HolderCategory = classifyHolder(h.address, top10Lookups[i] ?? null, creatorHash);
+    return {
+      address: h.address,
+      value: h.value.toString(),
+      percent: percentBigInt(h.value, totalSupply ?? 0n),
+      category,
+    };
+  });
+
+  const circulatingTop10Pct = (() => {
+    if (!totalSupply || totalSupply <= 0n) return null;
+    if (topHolders.length === 0) return null;
+    let nonCirculating = 0n;
+    for (const h of topHolders) {
+      if (NON_CIRCULATING_CATEGORIES.has(h.category)) {
+        try {
+          nonCirculating += BigInt(h.value ?? '0');
+        } catch {
+          /* skip malformed value */
+        }
+      }
+    }
+    // Also subtract burn/bridge holders that fall *outside* top-10 from the
+    // denominator when they appear in the wider holder list — otherwise the
+    // adjusted figure is still skewed by, e.g., a large burn balance ranked
+    // 11th. This is a best-effort pass; we only have what Blockscout
+    // returned in `holders`.
+    for (const h of holders) {
+      if (h.address === null || h.value === null) continue;
+      if (topHolders.some((t) => t.address === h.address)) continue;
+      const a = h.address;
+      // Re-classify without an `is_contract` lookup: only burn + bridge are
+      // identifiable from address alone, which is exactly what we need.
+      const cat = classifyHolder(a, null, creatorHash);
+      if (NON_CIRCULATING_CATEGORIES.has(cat)) {
+        nonCirculating += h.value;
+      }
+    }
+    const denominator = totalSupply - nonCirculating;
+    if (denominator <= 0n) return null;
+    const circulatingTop10Sum = topHolders
+      .filter((h) => !NON_CIRCULATING_CATEGORIES.has(h.category))
+      .reduce<bigint>((acc, h) => {
+        try {
+          return acc + BigInt(h.value ?? '0');
+        } catch {
+          return acc;
+        }
+      }, 0n);
+    return percentBigInt(circulatingTop10Sum, denominator);
+  })();
+
   const holderCount = (() => {
     const rec = readRecord(tokenInfo);
     const declared = coerceInt(rec.holders_count ?? rec.holders);
@@ -337,7 +425,7 @@ export async function fetchForensicsSummary(
     : null;
 
   const flags = computeFlags({
-    top10ConcentrationPct: top10Pct,
+    top10ConcentrationPct: circulatingTop10Pct ?? top10Pct,
     deployerHoldingsPct: deployerPct,
     verified,
     lpLocked,
@@ -360,6 +448,8 @@ export async function fetchForensicsSummary(
     token_activity: tokenActivity,
     holder_count: holderCount,
     top10_concentration_pct: top10Pct,
+    circulating_top10_concentration_pct: circulatingTop10Pct,
+    top_holders: topHolders,
     deployer_holdings_pct: deployerPct,
     lp_locked_heuristic: lpLocked,
     flags,

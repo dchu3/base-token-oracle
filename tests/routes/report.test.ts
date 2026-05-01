@@ -278,5 +278,105 @@ describe('GET /token/:address/report', () => {
     );
     expect(res.status).toBe(404);
   });
+
+  it('does not trip high_concentration when supply lives in burn + bridge holders', async () => {
+    const totalSupply = 1_000n;
+    const BURN = '0x000000000000000000000000000000000000dEaD';
+    const BRIDGE = '0x4200000000000000000000000000000000000010';
+    const tokenResp: BlockscoutToken = {
+      name: 'BridgedCoin',
+      symbol: 'BRG',
+      decimals: 18,
+      total_supply: totalSupply.toString(),
+      type: 'ERC-20',
+    };
+    // Top-10 raw concentration = 80%, but it's all burn (30%) + bridge (50%).
+    // Circulating denominator = 1000 - 800 = 200; circulating top-10 = 0%.
+    const holdersResp: BlockscoutHolders = {
+      items: [
+        { address: { hash: BRIDGE }, value: '500' },
+        { address: { hash: BURN }, value: '300' },
+        { address: { hash: WHALE }, value: '50' },
+      ],
+    };
+    const mock = mockBlockscout({
+      getToken: vi.fn(async () => tokenResp),
+      getTokenHolders: vi.fn(async () => holdersResp),
+      // Whichever address is queried, return is_contract=false so it's an EOA.
+      getAddress: vi.fn(async () => ({ is_contract: false }) as BlockscoutAddress),
+    });
+
+    const res = await request(makeApp(mock)).get(
+      `/api/v1/x402/base/token/${TOKEN}/report`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.top10_concentration_pct).toBe(85);
+    expect(res.body.circulating_top10_concentration_pct).toBe(25);
+    expect(res.body.flags).not.toContain('high_concentration');
+    const cats = res.body.top_holders.map((h: { category: string }) => h.category);
+    expect(cats).toEqual(expect.arrayContaining(['bridge', 'burn', 'eoa']));
+  });
+
+  it('classifies a contract holder (e.g., LP pool) as `contract`, not eoa', async () => {
+    const totalSupply = 1_000n;
+    const LP = '0x5555555555555555555555555555555555555555';
+    const tokenResp: BlockscoutToken = {
+      name: 'LpToken',
+      symbol: 'LP',
+      decimals: 18,
+      total_supply: totalSupply.toString(),
+      type: 'ERC-20',
+    };
+    const holdersResp: BlockscoutHolders = {
+      items: [{ address: { hash: LP }, value: '800' }],
+    };
+    const mock = mockBlockscout({
+      getToken: vi.fn(async () => tokenResp),
+      getTokenHolders: vi.fn(async () => holdersResp),
+      getAddress: vi.fn(async () => ({ is_contract: true }) as BlockscoutAddress),
+    });
+
+    const res = await request(makeApp(mock)).get(
+      `/api/v1/x402/base/token/${TOKEN}/report`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.top_holders).toHaveLength(1);
+    expect(res.body.top_holders[0]).toMatchObject({
+      address: LP,
+      percent: 80,
+      category: 'contract',
+    });
+    // contract holders are NOT excluded from circulating supply, so the
+    // raw and adjusted figures match.
+    expect(res.body.top10_concentration_pct).toBe(80);
+    expect(res.body.circulating_top10_concentration_pct).toBe(80);
+  });
+
+  it('falls back to `unknown` category when getAddress fails', async () => {
+    const totalSupply = 1_000n;
+    const tokenResp: BlockscoutToken = {
+      name: 'X',
+      symbol: 'X',
+      decimals: 18,
+      total_supply: totalSupply.toString(),
+      type: 'ERC-20',
+    };
+    const holdersResp: BlockscoutHolders = {
+      items: [{ address: { hash: WHALE }, value: '100' }],
+    };
+    const mock = mockBlockscout({
+      getToken: vi.fn(async () => tokenResp),
+      getTokenHolders: vi.fn(async () => holdersResp),
+      getAddress: vi.fn(async () => {
+        throw new Error('rpc timeout');
+      }),
+    });
+
+    const res = await request(makeApp(mock)).get(
+      `/api/v1/x402/base/token/${TOKEN}/report`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.top_holders[0].category).toBe('unknown');
+  });
 });
 

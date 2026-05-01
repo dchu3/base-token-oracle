@@ -17,7 +17,13 @@ export const FlagSchema = z.enum(FLAG_VALUES);
 export type Flag = z.infer<typeof FlagSchema>;
 
 export interface FlagInput {
-  /** Sum of the top-10 holders' balances as a percentage of total supply. */
+  /**
+   * Top-10 holder concentration as a percentage. Callers should pass the
+   * *circulating-supply-adjusted* figure (excluding burn + bridge balances)
+   * when available so that healthy tokens with most supply locked in burn
+   * sinks or canonical bridges aren't misflagged. Falls back to the raw
+   * percentage when the adjusted value can't be computed.
+   */
   top10ConcentrationPct: number | null;
   /** Deployer wallet's balance as a percentage of total supply. */
   deployerHoldingsPct: number | null;

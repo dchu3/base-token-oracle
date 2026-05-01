@@ -48,6 +48,21 @@ const reportExample = {
   },
   holder_count: 198_000,
   top10_concentration_pct: 41.2,
+  circulating_top10_concentration_pct: 38.7,
+  top_holders: [
+    {
+      address: '0x4200000000000000000000000000000000000010',
+      value: '12000000000000000000000',
+      percent: 12.0,
+      category: 'bridge',
+    },
+    {
+      address: '0x000000000000000000000000000000000000dead',
+      value: '5000000000000000000000',
+      percent: 5.0,
+      category: 'burn',
+    },
+  ],
   deployer_holdings_pct: 0,
   lp_locked_heuristic: null,
   flags: [],
