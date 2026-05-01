@@ -1,8 +1,10 @@
 {
     # Optional ACME issuer override. Defaults to Let's Encrypt production.
     # Useful values when LE is rate-limiting:
-    #   https://acme-staging-v02.api.letsencrypt.org/directory   (LE staging — untrusted certs, unlimited)
-    #   https://acme.zerossl.com/v2/DV90                         (ZeroSSL prod — separate quota)
+    #   https://acme-staging-v02.api.letsencrypt.org/directory   (LE staging — UNTRUSTED certs, unlimited)
+    # NOTE: ZeroSSL via plain ACME needs External Account Binding (EAB)
+    # credentials. To use ZeroSSL, configure Caddy's `zerossl` issuer in a
+    # `tls` block on the site instead of pointing acme_ca at it.
     # Set via `ACME_CA=...` in the env consumed by the caddy service.
     acme_ca {$ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
 }

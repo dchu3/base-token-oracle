@@ -172,12 +172,22 @@ volume. Two pitfalls to avoid:
    issuers without waiting:
 
    ```dotenv
-   # Untrusted but unlimited — fine for kicking the tyres:
+   # LE staging — UNTRUSTED by browsers/clients. Use only to confirm Caddy
+   # is otherwise healthy. Production traffic will see cert errors.
    ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
-
-   # ZeroSSL has a separate quota from Let's Encrypt:
-   ACME_CA=https://acme.zerossl.com/v2/DV90
    ```
+
+   For a publicly-trusted alternative use Caddy's built-in **ZeroSSL**
+   issuer instead of `acme_ca` — ZeroSSL via plain ACME requires External
+   Account Binding (EAB) credentials, which Caddy's `zerossl` module
+   provisions automatically. This isn't wired through `ACME_CA` (the
+   directory URL alone won't work without EAB); add a `tls` block to the
+   site in the `Caddyfile` if needed. See
+   [Caddy ZeroSSL docs](https://caddyserver.com/docs/automatic-https#zerossl).
+
+   Once the LE rate-limit window expires, **unset `ACME_CA`** (or set it
+   back to `https://acme-v02.api.letsencrypt.org/directory`) and restart
+   Caddy to resume issuing publicly-trusted Let's Encrypt certs.
 
 ## 7. Architecture
 
