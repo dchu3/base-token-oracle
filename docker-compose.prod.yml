@@ -45,8 +45,10 @@ services:
       DOMAIN: ${DOMAIN:?set DOMAIN=your.host before docker compose up}
       # Optional: override the ACME issuer when Let's Encrypt is rate-limiting.
       # Common values:
-      #   ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory  (untrusted staging certs, no per-domain limit)
-      #   ACME_CA=https://acme.zerossl.com/v2/DV90                         (ZeroSSL — separate quota from LE)
+      #   ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory  (LE staging — UNTRUSTED, no per-domain limit)
+      # NOTE: ZeroSSL via plain ACME needs EAB credentials — use Caddy's
+      # `zerossl` issuer module (configured in the Caddyfile) instead of
+      # pointing acme_ca at the ZeroSSL ACME URL.
       # Defaults to Let's Encrypt production (5 duplicate certs per
       # exact-identifier set per 168h — see https://letsencrypt.org/docs/rate-limits/).
       ACME_CA: ${ACME_CA:-}
