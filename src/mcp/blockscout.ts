@@ -27,6 +27,7 @@ const TokenHolderSchema = z
     address: z
       .object({
         hash: z.string().optional(),
+        is_contract: z.boolean().optional(),
       })
       .partial()
       .passthrough()
