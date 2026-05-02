@@ -6,15 +6,15 @@ export type BlockscoutChain = 'base' | 'ethereum';
 
 const TokenInfoSchema = z
   .object({
-    address: z.string().optional(),
-    address_hash: z.string().optional(),
-    name: z.string().optional(),
-    symbol: z.string().optional(),
-    decimals: z.union([z.string(), z.number()]).optional(),
-    type: z.string().optional(),
-    total_supply: z.string().optional(),
-    holders: z.union([z.string(), z.number()]).optional(),
-    holders_count: z.union([z.string(), z.number()]).optional(),
+    address: z.string().nullable().optional(),
+    address_hash: z.string().nullable().optional(),
+    name: z.string().nullable().optional(),
+    symbol: z.string().nullable().optional(),
+    decimals: z.union([z.string(), z.number()]).nullable().optional(),
+    type: z.string().nullable().optional(),
+    total_supply: z.string().nullable().optional(),
+    holders: z.union([z.string(), z.number()]).nullable().optional(),
+    holders_count: z.union([z.string(), z.number()]).nullable().optional(),
     circulating_market_cap: z.string().nullable().optional(),
     exchange_rate: z.string().nullable().optional(),
   })
