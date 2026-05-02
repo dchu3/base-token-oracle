@@ -124,11 +124,12 @@ function percentBigInt(numerator: bigint, denominator: bigint): number | null {
 
 function extractHolders(
   holders: BlockscoutHolders,
-): Array<{ address: string | null; value: bigint | null }> {
+): Array<{ address: string | null; value: bigint | null; is_contract: boolean | null }> {
   const items = holders.items ?? [];
   return items.map((h) => ({
     address: toLowerHex(h.address?.hash ?? null),
     value: coerceBigInt(h.value),
+    is_contract: typeof h.address?.is_contract === 'boolean' ? h.address.is_contract : null,
   }));
 }
 
@@ -333,23 +334,12 @@ export async function fetchForensicsSummary(
   // Pull the top-10 holders (by value) and classify each so consumers can
   // tell raw concentration apart from circulating-supply concentration.
   const top10Holders = holders
-    .filter((h): h is { address: string; value: bigint } => h.address !== null && h.value !== null)
+    .filter((h): h is { address: string; value: bigint; is_contract: boolean | null } => h.address !== null && h.value !== null)
     .sort((a, b) => (a.value > b.value ? -1 : a.value < b.value ? 1 : 0))
     .slice(0, 10);
 
-  const top10Lookups = await Promise.all(
-    top10Holders.map(async (h) => {
-      try {
-        const info = await blockscout.getAddress(h.address, 'base');
-        return typeof info.is_contract === 'boolean' ? info.is_contract : null;
-      } catch {
-        return null;
-      }
-    }),
-  );
-
-  const topHolders: TopHolder[] = top10Holders.map((h, i) => {
-    const category: HolderCategory = classifyHolder(h.address, top10Lookups[i] ?? null, creatorHash);
+  const topHolders: TopHolder[] = top10Holders.map((h) => {
+    const category: HolderCategory = classifyHolder(h.address, h.is_contract, creatorHash);
     return {
       address: h.address,
       value: h.value.toString(),
@@ -361,16 +351,15 @@ export async function fetchForensicsSummary(
   const circulatingTop10Pct = (() => {
     if (!totalSupply || totalSupply <= 0n) return null;
 
-    // Classify every holder using only address-based signals (burn + bridge
-    // are identifiable from address alone — no extra getAddress calls).
-    // This lets us compute the *true* top-10 of the circulating set even
+    // Classify every holder using their address and the API-provided is_contract status
+    // to compute the *true* top-10 of the circulating set even
     // when burn/bridge holders occupy raw top-10 slots.
     const holdersWithAddrCategory = holders
-      .filter((h): h is { address: string; value: bigint } => h.address !== null && h.value !== null)
+      .filter((h): h is { address: string; value: bigint; is_contract: boolean | null } => h.address !== null && h.value !== null)
       .map((h) => ({
         address: h.address,
         value: h.value,
-        category: classifyHolder(h.address, null, creatorHash),
+        category: classifyHolder(h.address, h.is_contract, creatorHash),
       }));
 
     let nonCirculating = 0n;
