@@ -137,4 +137,38 @@ describe('BlockscoutService', () => {
     await expect(promise).rejects.toThrow(/schema validation/);
     await svc.close();
   });
+
+  it('accepts get_token responses with null decimals and total_supply', async () => {
+    // Regression: Blockscout returns explicit null for decimals/total_supply on
+    // some sparsely-indexed Base tokens (e.g. 0x65021a79AeEF22b17cdc1B768f5e79a8618bEbA3).
+    // The upstream TokenInfoSchema previously declared these as optional() but
+    // not nullable(), causing the whole report to 500 with upstream_error.
+    const mock = new MockChild();
+    const client = new McpStdioClient({
+      name: 'bs',
+      command: 'dummy',
+      spawnImpl: (() => mock) as never,
+    });
+    const svc = new BlockscoutService(client);
+
+    const promise = svc.getToken('0x65021a79aeef22b17cdc1b768f5e79a8618beba3');
+    await initAndRespond(mock, client, {
+      address: '0x65021a79aeef22b17cdc1b768f5e79a8618beba3',
+      name: null,
+      symbol: null,
+      decimals: null,
+      total_supply: null,
+      type: null,
+      holders: null,
+      holders_count: null,
+      circulating_market_cap: null,
+      exchange_rate: null,
+    });
+    const tok = await promise;
+    expect(tok.decimals).toBeNull();
+    expect(tok.total_supply).toBeNull();
+    expect(tok.name).toBeNull();
+    expect(tok.symbol).toBeNull();
+    await svc.close();
+  });
 });
